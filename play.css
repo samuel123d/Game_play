@@ -1692,3 +1692,21 @@ svg.ui-icon[fill="none"] {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* Destaque da Rodada em Dobro (doublePoints) no celular */
+.player-card.is-double-points {
+  border-color: rgba(251, 191, 36, 0.72);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.45), 0 0 28px rgba(251, 191, 36, 0.22);
+}
+
+.player-double-banner {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(251, 191, 36, 0.75);
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.22), rgba(245, 158, 11, 0.14));
+  color: #fde047;
+  text-align: center;
+  font: 800 12px "JetBrains Mono", monospace;
+  letter-spacing: 0.12em;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.18);
+}

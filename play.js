@@ -107,9 +107,10 @@ function escapeHTML(value) {
   })[character]);
 }
 
-function isDoublePointsQuestion(qIndex, question) {
+function isDoublePointsQuestion(qIndex, question, game = null) {
   if (!question || qIndex < 0) return false;
   if (typeof question.doublePoints === "boolean") return question.doublePoints;
+  if (typeof game?.doublePoints === "boolean") return game.doublePoints;
   return GAME_QUESTIONS.length > 1 && qIndex === GAME_QUESTIONS.length - 1;
 }
 
@@ -286,8 +287,8 @@ function setConnected(connected) {
   connectionLabel.classList.toggle("is-connected", connected);
 }
 
-function renderQuestionHistoryGrid(answers, durationMs, maxQuestionsCount = GAME_QUESTIONS.length) {
-  const total = Math.max(1, Math.min(GAME_QUESTIONS.length, maxQuestionsCount));
+function renderQuestionHistoryGrid(answers, durationMs) {
+  const total = GAME_QUESTIONS.length;
   const items = [];
 
   for (let idx = 0; idx < total; idx++) {
@@ -348,8 +349,8 @@ function renderQuestionHistoryGrid(answers, durationMs, maxQuestionsCount = GAME
   `;
 }
 
-function buildReviewCarouselSrcdoc(answers, startIndex, durationMs, maxQuestionsCount = GAME_QUESTIONS.length) {
-  const total = Math.max(1, Math.min(GAME_QUESTIONS.length, maxQuestionsCount));
+function buildReviewCarouselSrcdoc(answers, startIndex, durationMs) {
+  const total = GAME_QUESTIONS.length;
   const safeStart = Math.max(0, Math.min(total - 1, Number(startIndex) || 0));
   const totalSecLabel = `${Math.round(durationMs / 1000)}s`;
 
@@ -911,13 +912,10 @@ function closeReviewIframeModal() {
 }
 
 function openReviewIframeModal(startIndex = 0) {
-  if (!currentPlayer || !currentGame) return;
+  if (!currentPlayer || !currentGame || currentGame.status !== "final") return;
   closeReviewIframeModal();
 
   const durationMs = getQuestionDurationMs(currentGame);
-  const maxCount = currentGame.status === "final"
-    ? GAME_QUESTIONS.length
-    : Math.min(GAME_QUESTIONS.length, Number(currentGame.questionIndex ?? 0) + 1);
 
   const modal = document.createElement("div");
   modal.id = "playerReviewModal";
@@ -942,8 +940,7 @@ function openReviewIframeModal(startIndex = 0) {
   iframe.srcdoc = buildReviewCarouselSrcdoc(
     currentPlayer.answers || {},
     startIndex,
-    durationMs,
-    maxCount
+    durationMs
   );
 
   modal.addEventListener("click", (event) => {
@@ -1055,7 +1052,7 @@ function renderGame(game, players) {
   const qIndex = Number(game.questionIndex);
   const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
-  const isDouble = isDoublePointsQuestion(qIndex, question);
+  const isDouble = isDoublePointsQuestion(qIndex, question, game);
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
   const myStreak = getActiveStreak(currentPlayer, game);
   const durationMs = getQuestionDurationMs(game);
@@ -1204,7 +1201,9 @@ function renderGame(game, players) {
               ? "Registrando sua resposta..."
               : nextStreakIfRight >= 2
                 ? `🔥 Acerte agora para chegar a ${nextStreakIfRight} seguidos (+${nextStreakBonus.toLocaleString("pt-BR")} pts de sequência)!`
-                : "Responda rápido para ganhar até +1.000 pts de velocidade!"}
+                : isDouble
+                  ? "⚡ Pontuação em dobro ativa! Acerte rápido para multiplicar seus pontos!"
+                  : "Responda rápido para ganhar até +1.000 pts de velocidade!"}
         </p>
       </article>
     `;
@@ -1265,7 +1264,7 @@ function renderGame(game, players) {
 
         bannerClass = "is-correct";
         bannerText = ansStreak >= 2
-          ? `🔥 Resposta correta! (${ansStreak} seguidos)`
+          ? `🔥 Resposta correta! (${ansStreak} seguidos${isDouble ? " · 2X" : ""})`
           : isDouble
             ? "⚡ Resposta correta (2X)!"
             : "✓ Resposta correta!";
@@ -1287,16 +1286,15 @@ function renderGame(game, players) {
       }
     }
 
-    const playedHistoryHTML = renderQuestionHistoryGrid(
-      currentPlayer.answers || {},
-      durationMs,
-      qIndex + 1
-    );
-
     gameContent.innerHTML = `
       <article class="player-card${isDouble ? " is-double-points" : ""}">
         ${header}
         ${identity}
+        ${isDouble ? `
+          <div class="player-double-banner">
+            <span>⚡ RODADA EM DOBRO · 2X PONTOS</span>
+          </div>
+        ` : ""}
         <div class="round-result-banner ${bannerClass}">
           <span>${bannerText}</span>
           <span class="round-result-pts">${bannerPts}</span>
@@ -1326,7 +1324,6 @@ function renderGame(game, players) {
           <b>POR QUE É A MAIS SEGURA?</b>
           ${escapeHTML(question.explanation)}
         </div>
-        ${playedHistoryHTML}
         ${ranking}
       </article>
     `;
@@ -1361,8 +1358,7 @@ function renderGame(game, players) {
 
   const fullHistoryHTML = renderQuestionHistoryGrid(
     currentPlayer.answers || {},
-    durationMs,
-    GAME_QUESTIONS.length
+    durationMs
   );
 
   gameContent.innerHTML = `
@@ -1539,7 +1535,7 @@ renderAvatarPreview();
 
 gameContent.addEventListener("click", async (event) => {
   const reviewTile = event.target.closest("[data-open-review]");
-  if (reviewTile) {
+  if (reviewTile && currentGame?.status === "final") {
     window.GameAudio?.playEffect("select");
     openReviewIframeModal(Number(reviewTile.dataset.openReview));
     return;
@@ -1560,7 +1556,7 @@ gameContent.addEventListener("click", async (event) => {
   const durationMs = getQuestionDurationMs(currentGame);
   const timeLeft = getSyncedRemainingMs(currentGame);
   const responseTimeMs = Math.max(100, Math.min(durationMs, durationMs - timeLeft));
-  const multiplier = isDoublePointsQuestion(qIndex, question) ? 2 : 1;
+  const multiplier = isDoublePointsQuestion(qIndex, question, currentGame) ? 2 : 1;
 
   submitting = true;
   pendingChoice = choice;
