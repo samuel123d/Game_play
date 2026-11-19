@@ -111,6 +111,9 @@ function isDoublePointsQuestion(qIndex, question, game = null) {
   if (!question || qIndex < 0) return false;
   if (typeof question.doublePoints === "boolean") return question.doublePoints;
   if (typeof game?.doublePoints === "boolean") return game.doublePoints;
+  if (/deep\s*fake|rodada em dobro|desafio final/i.test(String(question.prompt || ""))) {
+    return true;
+  }
   return GAME_QUESTIONS.length > 1 && qIndex === GAME_QUESTIONS.length - 1;
 }
 
@@ -1154,12 +1157,12 @@ function renderGame(game, players) {
         ${identity}
         ${isDouble ? `
           <div class="player-double-banner">
-            <span>⚡ RODADA EM DOBRO · 2X PONTOS</span>
+            <span>⚡ MODO DOBRO DE PONTOS · 2X ATIVO</span>
           </div>
         ` : ""}
         <div class="player-card-header">
           <span>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</span>
-          <span>ATÉ ${maxRoundPoints.toLocaleString("pt-BR")} PTS</span>
+          <span class="${isDouble ? "is-double-pts-label" : ""}">ATÉ ${maxRoundPoints.toLocaleString("pt-BR")} PTS${isDouble ? " (2X)" : ""}</span>
         </div>
         <h2>${escapeHTML(question.prompt)}</h2>
         <div class="player-timer-box${isUrgent ? " is-urgent" : ""}" id="playerTimerBox">
@@ -1169,7 +1172,7 @@ function renderGame(game, players) {
                 <circle cx="12" cy="12" r="9"></circle>
                 <polyline points="12 7 12 12 15 14"></polyline>
               </svg>
-              TEMPO RESTANTE · +RÁPIDO = +PONTOS
+              ${isDouble ? "VALENDO O DOBRO · +RÁPIDO = +PONTOS" : "TEMPO RESTANTE · +RÁPIDO = +PONTOS"}
             </span>
             <span class="player-seconds-badge${isUrgent ? " is-urgent" : ""}" id="playerSeconds">${String(secs).padStart(2, "0")}s</span>
           </div>
@@ -1202,7 +1205,7 @@ function renderGame(game, players) {
               : nextStreakIfRight >= 2
                 ? `🔥 Acerte agora para chegar a ${nextStreakIfRight} seguidos (+${nextStreakBonus.toLocaleString("pt-BR")} pts de sequência)!`
                 : isDouble
-                  ? "⚡ Pontuação em dobro ativa! Acerte rápido para multiplicar seus pontos!"
+                  ? "⚡ Modo Dobro de Pontos ativo! Acerte rápido para multiplicar sua pontuação por 2!"
                   : "Responda rápido para ganhar até +1.000 pts de velocidade!"}
         </p>
       </article>
@@ -1292,7 +1295,7 @@ function renderGame(game, players) {
         ${identity}
         ${isDouble ? `
           <div class="player-double-banner">
-            <span>⚡ RODADA EM DOBRO · 2X PONTOS</span>
+            <span>⚡ MODO DOBRO DE PONTOS · 2X ATIVO</span>
           </div>
         ` : ""}
         <div class="round-result-banner ${bannerClass}">
