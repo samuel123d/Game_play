@@ -14,7 +14,7 @@ const hostStatus = document.querySelector("#hostStatus");
 const hostActions = document.querySelector("#hostActions");
 const fullscreenToggle = document.querySelector("#fullscreenToggle");
 
-const audioToggle = document.querySelector("#audioToggle");
+const audioToggle = document.querySelector("#audioToggle, #soundToggle, [data-audio-toggle]");
 const audioToggleLabel = document.querySelector("#audioToggleLabel");
 const audioWavePath = document.querySelector("#audioWavePath");
 const audioMixerBtn = document.querySelector("#audioMixerBtn");
@@ -73,11 +73,14 @@ function getCorrectAnswerIndex(question) {
 
 function syncMusicForStatus(status) {
   if (!window.GameAudio) return;
-  if (status === "lobby") window.GameAudio.setTrack("lobby");
-  else if (status === "question") window.GameAudio.setTrack("question");
+  if (!window.GameAudio.isEnabled()) {
+    window.GameAudio.setTrack("none");
+    return;
+  }
+  if (status === "question") window.GameAudio.setTrack("question");
   else if (status === "review") window.GameAudio.setTrack("review");
   else if (status === "final") window.GameAudio.setTrack("victory");
-  else window.GameAudio.setTrack("none");
+  else window.GameAudio.setTrack("lobby");
 }
 
 function updateAudioButton() {
@@ -106,6 +109,7 @@ function initAudioControls() {
     sfxVolumeValue.textContent = `${pct}%`;
   }
   updateAudioButton();
+  syncMusicForStatus(currentGame?.status || "welcome");
 }
 
 function cleanupListeners() {
@@ -170,7 +174,6 @@ function subscribeToRoom(roomCode) {
       })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
 
-    // Toca efeito no telão quando um novo participante entra na sala
     if (knownPlayerCount >= 0 && currentPlayers.length > knownPlayerCount && currentGame?.status === "lobby") {
       window.GameAudio?.playEffect("join");
     }
@@ -281,14 +284,13 @@ async function closeRoom() {
     }
   }
 
-  window.GameAudio?.setTrack("none");
   window.GameConfetti?.stop();
   renderWelcomeScreen();
 }
 
 function renderWelcomeScreen() {
   window.clearInterval(timerInterval);
-  syncMusicForStatus("none");
+  syncMusicForStatus("welcome");
   gameContent.innerHTML = `
     <div class="game-screen game-welcome-screen">
       <p class="eyebrow">ATIVIDADE INTERATIVA EM TEMPO REAL</p>
@@ -333,7 +335,6 @@ function renderGame(game, players) {
   const joinUrl = `${window.location.origin}/play?room=${encodeURIComponent(game.roomCode)}`;
   const qIndex = Number(game.questionIndex);
 
-  // Sincroniza música de fundo e efeitos sonoros exclusivamente no telão
   syncMusicForStatus(game.status);
   const stateSoundKey = `${game.status}:${qIndex}`;
   if (stateSoundKey !== lastStateSoundKey) {
@@ -430,7 +431,6 @@ function renderGame(game, players) {
     const correctIndex = getCorrectAnswerIndex(question);
     const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
 
-    // Efeito sonoro discreto no telão a cada resposta recebida
     if (isQuestion) {
       if (knownAnsweredKey !== qKey) {
         knownAnsweredKey = qKey;
@@ -575,12 +575,18 @@ function renderGame(game, players) {
 }
 
 audioToggle?.addEventListener("click", async () => {
+  if (!window.GameAudio) {
+    hostStatus.textContent = "Erro: game-audio.js não foi carregado no index.html.";
+    return;
+  }
   try {
     const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
     updateAudioButton();
     if (enabled) {
-      syncMusicForStatus(currentGame?.status || "none");
-      window.GameAudio.playEffect("select");
+      syncMusicForStatus(currentGame?.status || "welcome");
+      window.GameAudio.playEffect("start");
+    } else {
+      window.GameAudio.setTrack("none");
     }
   } catch (err) {
     hostStatus.textContent = `Áudio indisponível: ${err.message}`;
@@ -619,7 +625,7 @@ audioTestBtn?.addEventListener("click", async () => {
   if (!window.GameAudio.isEnabled()) {
     await window.GameAudio.setEnabled(true);
     updateAudioButton();
-    syncMusicForStatus(currentGame?.status || "none");
+    syncMusicForStatus(currentGame?.status || "welcome");
   }
   window.GameAudio.playEffect("correct");
 });
