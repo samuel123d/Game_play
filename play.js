@@ -7,7 +7,8 @@ import {
   getDocs,
   addDoc,
   updateDoc,
-  onSnapshot
+  onSnapshot,
+  increment
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const joinForm = document.querySelector("#playerJoinForm");
@@ -24,6 +25,8 @@ const avatarPreview = document.querySelector("#avatarPreview");
 const avatarFields = [...document.querySelectorAll("[data-avatar-field]")];
 
 const QUESTION_DURATION_MS = 20000;
+const BASE_POINTS = 1000;
+const SPEED_BONUS_MAX = 500;
 
 const params = new URLSearchParams(location.search);
 const roomFromUrl = params.get("room") || "";
@@ -38,7 +41,10 @@ let unsubRoom = null;
 let unsubPlayers = null;
 let timerInterval = 0;
 let submitting = false;
+let pendingChoice = null;
 let burstDone = false;
+let trackedQuestionKey = "";
+let trackedQuestionStartLocal = 0;
 
 function selectedAvatar() {
   return Object.fromEntries(avatarFields.map((field) => [field.dataset.avatarField, field.value]));
@@ -56,6 +62,34 @@ function escapeHTML(value) {
     '"': "&quot;",
     "'": "&#39;"
   })[character]);
+}
+
+function getCorrectAnswerIndex(question) {
+  if (!question) return -1;
+  const raw = question.answer ?? question.correctIndex ?? question.correct ?? question.rightAnswer;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (/^\d+$/.test(trimmed)) return Number(trimmed);
+    const letterIdx = ["A", "B", "C", "D"].indexOf(trimmed.toUpperCase());
+    if (letterIdx !== -1) return letterIdx;
+    if (Array.isArray(question.choices)) {
+      return question.choices.findIndex((c) => String(c).trim() === trimmed);
+    }
+  }
+  return -1;
+}
+
+function getRemainingMs(game) {
+  const remoteRemaining = Number(game?.questionEndsAt || 0) - Date.now();
+  if (remoteRemaining > 0) {
+    return Math.min(QUESTION_DURATION_MS, remoteRemaining);
+  }
+  // Fallback seguro caso o relógio do celular esteja adiantado em relação ao telão
+  if (trackedQuestionStartLocal > 0) {
+    return Math.max(0, QUESTION_DURATION_MS - (Date.now() - trackedQuestionStartLocal));
+  }
+  return 0;
 }
 
 function showStatus(message, error = false) {
@@ -114,6 +148,9 @@ function clearSession() {
   currentGame = null;
   currentPlayers = [];
   currentPlayer = null;
+  pendingChoice = null;
+  trackedQuestionKey = "";
+  trackedQuestionStartLocal = 0;
   burstDone = false;
   setConnected(false);
 }
@@ -146,6 +183,17 @@ function renderGame(game, players) {
   const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
+
+  if (game.status === "question") {
+    const stateKey = `${game.roomCode}:${qKey}:${game.questionEndsAt || 0}`;
+    if (trackedQuestionKey !== stateKey) {
+      trackedQuestionKey = stateKey;
+      trackedQuestionStartLocal = Date.now();
+      pendingChoice = null;
+    }
+  } else {
+    pendingChoice = null;
+  }
 
   joinSection.hidden = true;
   gameSection.hidden = false;
@@ -186,13 +234,14 @@ function renderGame(game, players) {
     return;
   }
 
-  const lastChoice = roundAnswer ? roundAnswer.choice : null;
+  const lastChoice = roundAnswer ? Number(roundAnswer.choice) : pendingChoice;
   const ranking = renderRanking(players);
 
   if (game.status === "question" && question) {
-    const remaining = Math.max(0, (game.questionEndsAt || Date.now()) - Date.now());
+    const remaining = getRemainingMs(game);
     const secs = Math.ceil(remaining / 1000);
     const isUrgent = secs <= 5;
+    const isLocked = lastChoice !== null || submitting;
 
     gameContent.innerHTML = `
       <article class="player-card">
@@ -213,25 +262,27 @@ function renderGame(game, players) {
                 class="player-answer${isSelected ? " is-selected" : ""}${isDimmed ? " is-dimmed" : ""}"
                 type="button"
                 data-choice="${index}"
-                ${lastChoice !== null || submitting ? "disabled" : ""}
+                ${isLocked ? "disabled" : ""}
               >
                 <span class="player-answer-letter">${["A", "B", "C"][index]}</span>
                 <span class="player-answer-text">${escapeHTML(choice)}</span>
-                ${isSelected ? `<span class="player-answer-tag">ENVIADA</span>` : ""}
+                ${isSelected ? `<span class="player-answer-tag">${roundAnswer ? "ENVIADA" : "ENVIANDO..."}</span>` : ""}
               </button>
             `;
           }).join("")}
         </div>
         <p class="player-feedback-box${lastChoice !== null ? " is-locked" : ""}" id="playerFeedback" aria-live="polite">
-          ${lastChoice !== null
+          ${roundAnswer
             ? "Resposta registrada! Aguarde a revelação no telão."
-            : "Toque em uma alternativa antes do tempo acabar."}
+            : pendingChoice !== null
+              ? "Registrando sua resposta..."
+              : "Toque em uma alternativa antes do tempo acabar."}
         </p>
       </article>
     `;
 
     const updateTimer = () => {
-      const msLeft = Math.max(0, (game.questionEndsAt || Date.now()) - Date.now());
+      const msLeft = getRemainingMs(game);
       const secLeft = Math.ceil(msLeft / 1000);
       const urgent = secLeft > 0 && secLeft <= 5;
 
@@ -245,7 +296,7 @@ function renderGame(game, players) {
         fill.style.width = `${Math.max(0, (msLeft / QUESTION_DURATION_MS) * 100)}%`;
         fill.classList.toggle("is-urgent", urgent);
       }
-      if (msLeft === 0 && lastChoice === null) {
+      if (msLeft === 0 && lastChoice === null && !submitting) {
         const feedback = gameContent.querySelector("#playerFeedback");
         if (feedback) feedback.textContent = "Tempo esgotado! Aguarde a resposta correta no telão.";
         gameContent.querySelectorAll("[data-choice]").forEach((btn) => { btn.disabled = true; });
@@ -257,15 +308,18 @@ function renderGame(game, players) {
   }
 
   if (game.status === "review" && question) {
+    const correctIndex = getCorrectAnswerIndex(question);
     let bannerClass = "is-timeout";
     let bannerText = "⏱ Tempo esgotado nesta rodada";
     let bannerPts = "0 PTS";
 
-    if (lastChoice !== null) {
-      if (roundAnswer?.correct) {
+    if (lastChoice !== null && roundAnswer) {
+      const wasCorrect = Boolean(roundAnswer.correct) || lastChoice === correctIndex;
+      const earned = Number(roundAnswer.pointsEarned || (wasCorrect ? BASE_POINTS : 0));
+      if (wasCorrect) {
         bannerClass = "is-correct";
         bannerText = "✓ Resposta correta!";
-        bannerPts = `+${Number(roundAnswer.pointsEarned || 0).toLocaleString("pt-BR")} PTS`;
+        bannerPts = `+${earned.toLocaleString("pt-BR")} PTS`;
       } else {
         bannerClass = "is-incorrect";
         bannerText = "✕ Não foi dessa vez";
@@ -284,7 +338,7 @@ function renderGame(game, players) {
         <h2>${escapeHTML(question.prompt)}</h2>
         <div class="player-answer-list">
           ${question.choices.map((choice, index) => {
-            const isCorrectOpt = index === question.answer;
+            const isCorrectOpt = index === correctIndex;
             const isWrongPick = lastChoice === index && !isCorrectOpt;
             const stateClass = isCorrectOpt ? " is-correct" : isWrongPick ? " is-incorrect" : " is-dimmed";
             const tag = isCorrectOpt
@@ -501,28 +555,46 @@ gameContent.addEventListener("click", async (event) => {
   if (currentPlayer?.answers?.[qKey] !== undefined) return;
 
   const choice = Number(button.dataset.choice);
-  const timeLeft = Math.max(0, (currentGame.questionEndsAt || Date.now()) - Date.now());
-  if (timeLeft === 0) return;
+  const timeLeft = getRemainingMs(currentGame);
 
   submitting = true;
-  button.disabled = true;
+  pendingChoice = choice;
+  renderGame(currentGame, currentPlayers);
 
   try {
-    const correct = choice === question.answer;
-    const pointsEarned = correct ? 1000 + Math.round((500 * timeLeft) / QUESTION_DURATION_MS) : 0;
-    const newScore = Number(currentPlayer.score || 0) + pointsEarned;
+    const correctIndex = getCorrectAnswerIndex(question);
+    const correct = choice === correctIndex;
+    const speedBonus = Math.round((SPEED_BONUS_MAX * timeLeft) / QUESTION_DURATION_MS);
+    const pointsEarned = correct ? BASE_POINTS + speedBonus : 0;
+
+    const answerPayload = {
+      choice,
+      correct,
+      pointsEarned,
+      answeredAt: Date.now()
+    };
 
     await updateDoc(doc(db, "rooms", playerRoom, "players", playerId), {
-      score: newScore,
-      [`answers.${qKey}`]: {
-        choice,
-        correct,
-        pointsEarned,
-        answeredAt: Date.now()
-      }
+      score: increment(pointsEarned),
+      [`answers.${qKey}`]: answerPayload
     });
+
+    if (currentPlayer) {
+      currentPlayer.score = Number(currentPlayer.score || 0) + pointsEarned;
+      currentPlayer.answers = { ...(currentPlayer.answers || {}), [qKey]: answerPayload };
+    }
+    pendingChoice = null;
+    if (currentGame.status === "question") {
+      renderGame(currentGame, currentPlayers);
+    }
   } catch (error) {
+    pendingChoice = null;
+    const feedback = gameContent.querySelector("#playerFeedback");
+    if (feedback) {
+      feedback.textContent = `Erro ao salvar resposta: ${error.message}`;
+    }
     showStatus(`Não foi possível enviar sua resposta: ${error.message}`, true);
+    gameContent.querySelectorAll("[data-choice]").forEach((btn) => { btn.disabled = false; });
   } finally {
     submitting = false;
   }

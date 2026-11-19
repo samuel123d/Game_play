@@ -55,6 +55,22 @@ function generateRoomCode() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
+function getCorrectAnswerIndex(question) {
+  if (!question) return -1;
+  const raw = question.answer ?? question.correctIndex ?? question.correct ?? question.rightAnswer;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (/^\d+$/.test(trimmed)) return Number(trimmed);
+    const letterIdx = ["A", "B", "C", "D"].indexOf(trimmed.toUpperCase());
+    if (letterIdx !== -1) return letterIdx;
+    if (Array.isArray(question.choices)) {
+      return question.choices.findIndex((c) => String(c).trim() === trimmed);
+    }
+  }
+  return -1;
+}
+
 function syncMusicForStatus(status) {
   if (!window.GameAudio) return;
   if (status === "lobby") window.GameAudio.setTrack("lobby");
@@ -411,6 +427,7 @@ function renderGame(game, players) {
   if ((game.status === "question" || game.status === "review") && question) {
     const isQuestion = game.status === "question";
     const isReview = game.status === "review";
+    const correctIndex = getCorrectAnswerIndex(question);
     const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
 
     // Efeito sonoro discreto no telão a cada resposta recebida
@@ -446,7 +463,7 @@ function renderGame(game, players) {
         }
         <div class="game-projector-answers">
           ${question.choices.map((choice, idx) => `
-            <div class="game-projector-answer${isReview && idx === question.answer ? " is-correct" : ""}${isReview && idx !== question.answer ? " is-dimmed" : ""}">
+            <div class="game-projector-answer${isReview && idx === correctIndex ? " is-correct" : ""}${isReview && idx !== correctIndex ? " is-dimmed" : ""}">
               <span>${["A", "B", "C"][idx]}</span>
               <div>${escapeHTML(choice)}</div>
             </div>
