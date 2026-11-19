@@ -52,7 +52,8 @@ export const GAME_QUESTIONS = [
     ],
     answer: 1,
     explanation:
-      "O Deepfake usa inteligência artificial para manipular rostos e vozes com extremo realismo — até mesmo ao vivo durante uma videochamada."
+      "O Deepfake usa inteligência artificial para manipular rostos e vozes com extremo realismo — até mesmo ao vivo durante uma videochamada.",
+      doublePoints: true
   },
   {
     prompt: "No Phishing, criminosos imitam bancos ou órgãos oficiais. Além de roubar senhas e dinheiro, que outro risco direto foi destacado?",
