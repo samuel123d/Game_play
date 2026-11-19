@@ -1111,3 +1111,192 @@ input {
     animation: none !important;
   }
 }
+/* =========================================================
+   ANIMAÇÃO DE FOGUINHO NO AVATAR (SEQUÊNCIA DE ACERTOS)
+   ========================================================= */
+
+.avatar-fire-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 50%;
+}
+
+.avatar-fire-wrap .game-avatar {
+  position: relative;
+  z-index: 2;
+  border-color: #fb923c;
+  box-shadow: 0 0 14px rgba(249, 115, 22, 0.55);
+}
+
+.avatar-fire-wrap.is-hot .game-avatar {
+  border-color: #fbbf24;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.75);
+}
+
+.avatar-fire-wrap.is-blazing .game-avatar {
+  border-color: #fef08a;
+  box-shadow: 0 0 24px rgba(253, 224, 71, 0.9), 0 0 38px rgba(239, 68, 68, 0.65);
+}
+
+.avatar-fire-aura {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #ef4444,
+    #f97316,
+    #facc15,
+    #fb923c,
+    #ef4444
+  );
+  filter: blur(4px);
+  opacity: 0.85;
+  z-index: 1;
+  animation: fireAuraSpin 2.2s linear infinite, fireAuraPulse 0.9s ease-in-out infinite alternate;
+}
+
+.avatar-fire-wrap.is-blazing .avatar-fire-aura {
+  inset: -6px;
+  filter: blur(5px);
+  opacity: 1;
+}
+
+.avatar-fire-flames {
+  position: absolute;
+  inset: -7px -4px -2px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.avatar-fire-flames i {
+  position: absolute;
+  bottom: 22%;
+  width: 9px;
+  height: 14px;
+  border-radius: 50% 50% 35% 35%;
+  background: radial-gradient(circle at 50% 75%, #fef08a 0%, #f97316 55%, rgba(239, 68, 68, 0) 100%);
+  transform-origin: bottom center;
+  animation: avatarFlameLick 0.75s ease-in-out infinite alternate;
+}
+
+.avatar-fire-flames i:nth-child(1) { left: 6%;  animation-delay: 0s;    height: 13px; }
+.avatar-fire-flames i:nth-child(2) { left: 24%; animation-delay: 0.18s; height: 17px; }
+.avatar-fire-flames i:nth-child(3) { left: 45%; animation-delay: 0.08s; height: 19px; }
+.avatar-fire-flames i:nth-child(4) { left: 66%; animation-delay: 0.25s; height: 16px; }
+.avatar-fire-flames i:nth-child(5) { left: 82%; animation-delay: 0.12s; height: 13px; }
+
+.avatar-fire-wrap.is-blazing .avatar-fire-flames i {
+  background: radial-gradient(circle at 50% 80%, #ffffff 0%, #fde047 38%, #f97316 70%, rgba(239, 68, 68, 0) 100%);
+}
+
+.avatar-fire-badge {
+  position: absolute;
+  bottom: -5px;
+  right: -6px;
+  z-index: 4;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f97316, #dc2626);
+  border: 1.5px solid #fef08a;
+  color: #ffffff;
+  font-family: "JetBrains Mono", "DM Mono", monospace;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+/* Destaque da linha e selos de sequência */
+.player-identity.is-on-fire {
+  border-color: rgba(251, 146, 60, 0.52);
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.12), rgba(23, 30, 49, 0.92));
+}
+
+.player-streak-chip {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 146, 60, 0.55);
+  background: rgba(249, 115, 22, 0.16);
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.player-streak-chip span {
+  color: #fdba74;
+  font: 800 10px "JetBrains Mono", monospace;
+  letter-spacing: 0.05em;
+}
+
+.player-streak-chip small {
+  color: #fde047;
+  font: 700 10px "JetBrains Mono", monospace;
+}
+
+.points-breakdown-row {
+  margin: -6px 0 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font: 600 11px "JetBrains Mono", monospace;
+  color: #cbd5e1;
+}
+
+.points-breakdown-row b {
+  color: #34d399;
+}
+
+.points-breakdown-row span.is-fire b {
+  color: #fb923c;
+}
+
+.streak-inline-pill,
+.host-streak-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.18);
+  border: 1px solid rgba(251, 146, 60, 0.5);
+  color: #fdba74;
+  font: 700 10px "JetBrains Mono", "DM Mono", monospace;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+.game-standings li.is-on-fire {
+  border-color: rgba(251, 146, 60, 0.42);
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.12), rgba(18, 22, 49, 0.88));
+}
+
+@keyframes fireAuraSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fireAuraPulse {
+  from { transform: scale(0.96); opacity: 0.78; }
+  to { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes avatarFlameLick {
+  0% {
+    transform: translateY(0) scaleX(0.9) scaleY(0.85) rotate(-5deg);
+    opacity: 0.78;
+  }
+  100% {
+    transform: translateY(-6px) scaleX(1.12) scaleY(1.25) rotate(6deg);
+    opacity: 1;
+  }
+}

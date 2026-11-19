@@ -27,7 +27,9 @@ const avatarFields = [...document.querySelectorAll("[data-avatar-field]")];
 
 const QUESTION_DURATION_MS = 30000;
 const BASE_POINTS = 1000;
-const SPEED_BONUS_MAX = 500;
+const SPEED_BONUS_MAX = 1000;
+const STREAK_STEP_BONUS = 250;
+const STREAK_BONUS_MAX = 1000;
 
 const params = new URLSearchParams(location.search);
 const roomFromUrl = params.get("room") || "";
@@ -44,7 +46,10 @@ let timerInterval = 0;
 let submitting = false;
 let pendingChoice = null;
 let burstDone = false;
-let trackedQuestionKey = "";
+
+let clockOffsetMs = Number(sessionStorage.getItem("conexao-clock-offset") || 0);
+let syncedQuestionKey = "";
+let hasSeenRoomSnapshot = false;
 let trackedQuestionStartLocal = 0;
 let lastPlayerStateSoundKey = "";
 let lastPlayerUrgentSecond = -1;
@@ -124,20 +129,111 @@ function getCorrectAnswerIndex(question) {
   return -1;
 }
 
+function computePreviousStreak(answers, currentQIndex) {
+  let count = 0;
+  for (let i = currentQIndex - 1; i >= 0; i--) {
+    const ans = answers?.[String(i)];
+    if (ans && ans.correct) {
+      count += 1;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+function getStreakBonus(streak) {
+  if (streak < 2) return 0;
+  return Math.min(STREAK_BONUS_MAX, (streak - 1) * STREAK_STEP_BONUS);
+}
+
+function getActiveStreak(player, game) {
+  if (!player || !game) return 0;
+  const answers = player.answers || {};
+  const qIndex = Number(game.questionIndex ?? -1);
+
+  if (game.status === "lobby" || qIndex < 0) return 0;
+
+  if (game.status === "question") {
+    const currentAns = answers[String(qIndex)];
+    if (currentAns !== undefined) {
+      return currentAns.correct ? 1 + computePreviousStreak(answers, qIndex) : 0;
+    }
+    return computePreviousStreak(answers, qIndex);
+  }
+
+  if (game.status === "review") {
+    const currentAns = answers[String(qIndex)];
+    if (!currentAns || !currentAns.correct) return 0;
+    return 1 + computePreviousStreak(answers, qIndex);
+  }
+
+  return computePreviousStreak(answers, GAME_QUESTIONS.length);
+}
+
+function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
+  const baseAvatar = window.GameAvatar.render(avatar, avatarClass);
+  if (streak < 2) return baseAvatar;
+
+  const tierClass = streak >= 4 ? "is-blazing" : streak === 3 ? "is-hot" : "is-warm";
+  return `
+    <span class="avatar-fire-wrap ${tierClass}" title="Sequência de ${streak} acertos!">
+      <span class="avatar-fire-aura" aria-hidden="true"></span>
+      <span class="avatar-fire-flames" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i>
+      </span>
+      ${baseAvatar}
+      <span class="avatar-fire-badge">🔥${streak}</span>
+    </span>
+  `;
+}
+
 function getQuestionDurationMs(game) {
   const val = Number(game?.questionDurationMs);
   return Number.isFinite(val) && val > 0 ? val : QUESTION_DURATION_MS;
 }
 
-function getRemainingMs(game) {
+function syncQuestionClock(game) {
   const durationMs = getQuestionDurationMs(game);
-  const remoteRemaining = Number(game?.questionEndsAt || 0) - Date.now();
-  if (remoteRemaining > 0) {
-    return Math.min(durationMs, remoteRemaining);
+  const serverEndsAt = Number(game?.questionEndsAt) || 0;
+  const qKey = String(game?.questionIndex ?? -1);
+  const stateKey = `${game?.roomCode || ""}:${qKey}:${serverEndsAt}`;
+
+  if (stateKey !== syncedQuestionKey) {
+    syncedQuestionKey = stateKey;
+    trackedQuestionStartLocal = Date.now();
+    pendingChoice = null;
+
+    if (serverEndsAt > 0) {
+      if (hasSeenRoomSnapshot) {
+        clockOffsetMs = Date.now() + durationMs - serverEndsAt;
+        sessionStorage.setItem("conexao-clock-offset", String(clockOffsetMs));
+      } else {
+        const calibratedRemaining = serverEndsAt + clockOffsetMs - Date.now();
+        if (calibratedRemaining > durationMs) {
+          clockOffsetMs = Date.now() + durationMs - serverEndsAt;
+          sessionStorage.setItem("conexao-clock-offset", String(clockOffsetMs));
+        }
+      }
+    }
   }
+
+  return { durationMs, serverEndsAt };
+}
+
+function getSyncedRemainingMs(game) {
+  const durationMs = getQuestionDurationMs(game);
+  const serverEndsAt = Number(game?.questionEndsAt) || 0;
+
+  if (serverEndsAt > 0) {
+    const remaining = serverEndsAt + clockOffsetMs - Date.now();
+    return Math.max(0, Math.min(durationMs, remaining));
+  }
+
   if (trackedQuestionStartLocal > 0) {
     return Math.max(0, durationMs - (Date.now() - trackedQuestionStartLocal));
   }
+
   return 0;
 }
 
@@ -151,7 +247,7 @@ function setConnected(connected) {
   connectionLabel.classList.toggle("is-connected", connected);
 }
 
-function renderRanking(players) {
+function renderRanking(players, game) {
   const topPlayers = (players || []).slice(0, 5);
   return `
     <div class="player-ranking">
@@ -159,12 +255,14 @@ function renderRanking(players) {
       <ol>
         ${topPlayers.map((player, index) => {
           const isMe = player.id === playerId;
+          const pStreak = getActiveStreak(player, game);
           return `
             <li class="${isMe ? "is-me" : ""}" style="--stagger:${index}">
               <span>${String(index + 1).padStart(2, "0")}</span>
-              ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
+              ${renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak)}
               <b>
-                ${escapeHTML(player.name)}
+                <span class="ranking-player-name">${escapeHTML(player.name)}</span>
+                ${pStreak >= 2 ? `<span class="streak-inline-pill">🔥 ${pStreak}x</span>` : ""}
                 ${isMe ? `<span class="ranking-me-badge">VOCÊ</span>` : ""}
               </b>
               <span>${player.score.toLocaleString("pt-BR")} pts</span>
@@ -198,7 +296,8 @@ function clearSession() {
   currentPlayers = [];
   currentPlayer = null;
   pendingChoice = null;
-  trackedQuestionKey = "";
+  syncedQuestionKey = "";
+  hasSeenRoomSnapshot = false;
   trackedQuestionStartLocal = 0;
   lastPlayerStateSoundKey = "";
   burstDone = false;
@@ -225,6 +324,7 @@ function renderGame(game, players) {
 
   const me = players.find((p) => p.id === playerId);
   if (!me) {
+    hasSeenRoomSnapshot = true;
     return;
   }
 
@@ -235,6 +335,7 @@ function renderGame(game, players) {
   const question = GAME_QUESTIONS[qIndex];
   const isDouble = isDoublePointsQuestion(qIndex, question);
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
+  const myStreak = getActiveStreak(currentPlayer, game);
 
   const stateSoundKey = `${game.status}:${qKey}`;
   if (stateSoundKey !== lastPlayerStateSoundKey) {
@@ -251,7 +352,7 @@ function renderGame(game, players) {
       if (userChoice === null) {
         window.GameAudio?.playEffect("timeout");
       } else if (Boolean(roundAnswer?.correct) || userChoice === correctIndex) {
-        window.GameAudio?.playEffect("correct");
+        window.GameAudio?.playEffect(myStreak >= 2 ? "doublePointsStart" : "correct");
       } else {
         window.GameAudio?.playEffect("wrong");
       }
@@ -262,16 +363,12 @@ function renderGame(game, players) {
   }
 
   if (game.status === "question") {
-    const stateKey = `${game.roomCode}:${qKey}:${game.questionEndsAt || 0}`;
-    if (trackedQuestionKey !== stateKey) {
-      trackedQuestionKey = stateKey;
-      trackedQuestionStartLocal = Date.now();
-      pendingChoice = null;
-    }
+    syncQuestionClock(game);
   } else {
     pendingChoice = null;
   }
 
+  hasSeenRoomSnapshot = true;
   joinSection.hidden = true;
   gameSection.hidden = false;
 
@@ -282,12 +379,18 @@ function renderGame(game, players) {
     </header>
   `;
   const identity = `
-    <div class="player-identity">
-      ${window.GameAvatar.render(currentPlayer.avatar, "game-avatar game-avatar-identity")}
+    <div class="player-identity${myStreak >= 2 ? " is-on-fire" : ""}">
+      ${renderAvatarWithFire(currentPlayer.avatar, "game-avatar game-avatar-identity", myStreak)}
       <div class="player-identity-info">
         <span>JOGANDO COMO</span>
         <b>${escapeHTML(currentPlayer.name)}</b>
       </div>
+      ${myStreak >= 2 ? `
+        <div class="player-streak-chip">
+          <span>🔥 ${myStreak} SEGUIDOS</span>
+          <small>+${(getStreakBonus(myStreak) * (isDouble ? 2 : 1)).toLocaleString("pt-BR")} PTS</small>
+        </div>
+      ` : ""}
     </div>
   `;
 
@@ -312,14 +415,18 @@ function renderGame(game, players) {
   }
 
   const lastChoice = roundAnswer ? Number(roundAnswer.choice) : pendingChoice;
-  const ranking = renderRanking(players);
+  const ranking = renderRanking(players, game);
 
   if (game.status === "question" && question) {
     const durationMs = getQuestionDurationMs(game);
-    const remaining = getRemainingMs(game);
+    const remaining = getSyncedRemainingMs(game);
     const secs = Math.ceil(remaining / 1000);
     const isUrgent = secs > 0 && secs <= 5;
     const isLocked = lastChoice !== null || submitting;
+    const multiplier = isDouble ? 2 : 1;
+    const nextStreakIfRight = myStreak + 1;
+    const nextStreakBonus = getStreakBonus(nextStreakIfRight) * multiplier;
+    const maxRoundPoints = ((BASE_POINTS + SPEED_BONUS_MAX) * multiplier) + nextStreakBonus;
 
     gameContent.innerHTML = `
       <article class="player-card${isDouble ? " is-double-points" : ""}">
@@ -332,7 +439,7 @@ function renderGame(game, players) {
         ` : ""}
         <div class="player-card-header">
           <span>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</span>
-          <span>${isDouble ? "ATÉ 3.000 PTS" : "ATÉ 1.500 PTS"}</span>
+          <span>ATÉ ${maxRoundPoints.toLocaleString("pt-BR")} PTS</span>
         </div>
         <h2>${escapeHTML(question.prompt)}</h2>
         <div class="player-timer-box${isUrgent ? " is-urgent" : ""}" id="playerTimerBox">
@@ -342,11 +449,11 @@ function renderGame(game, players) {
                 <circle cx="12" cy="12" r="9"></circle>
                 <polyline points="12 7 12 12 15 14"></polyline>
               </svg>
-              TEMPO RESTANTE
+              TEMPO RESTANTE · +RÁPIDO = +PONTOS
             </span>
             <span class="player-seconds-badge${isUrgent ? " is-urgent" : ""}" id="playerSeconds">${String(secs).padStart(2, "0")}s</span>
           </div>
-          <div class="player-timer"><i id="playerTimerFill" class="${isUrgent ? "is-urgent" : ""}"></i></div>
+          <div class="player-timer"><i id="playerTimerFill" class="${isUrgent ? "is-urgent" : ""}" style="width: ${Math.max(0, Math.min(100, (remaining / durationMs) * 100))}%"></i></div>
         </div>
         <div class="player-answer-list">
           ${question.choices.map((choice, index) => {
@@ -369,18 +476,18 @@ function renderGame(game, players) {
         </div>
         <p class="player-feedback-box${lastChoice !== null ? " is-locked" : ""}" id="playerFeedback" aria-live="polite">
           ${roundAnswer
-            ? "Resposta registrada! Aguarde a revelação no telão."
+            ? `Resposta registrada! ${roundAnswer.correct ? `Você garantiu +${Number(roundAnswer.pointsEarned || 0).toLocaleString("pt-BR")} pts.` : "Aguarde a revelação no telão."}`
             : pendingChoice !== null
               ? "Registrando sua resposta..."
-              : isDouble
-                ? "⚡ Valendo o dobro de pontos! Responda rápido."
-                : "Toque em uma alternativa antes do tempo acabar."}
+              : nextStreakIfRight >= 2
+                ? `🔥 Acerte agora para chegar a ${nextStreakIfRight} seguidos (+${nextStreakBonus.toLocaleString("pt-BR")} pts de sequência)!`
+                : "Responda rápido para ganhar até +1.000 pts de velocidade!"}
         </p>
       </article>
     `;
 
     const updateTimer = () => {
-      const msLeft = getRemainingMs(game);
+      const msLeft = getSyncedRemainingMs(game);
       const secLeft = Math.ceil(msLeft / 1000);
       const urgent = secLeft > 0 && secLeft <= 5;
 
@@ -419,17 +526,35 @@ function renderGame(game, players) {
     let bannerClass = "is-timeout";
     let bannerText = "⏱ Tempo esgotado nesta rodada";
     let bannerPts = "0 PTS";
+    let breakdownHTML = "";
 
     if (lastChoice !== null && roundAnswer) {
       const wasCorrect = Boolean(roundAnswer.correct) || lastChoice === correctIndex;
       const earned = Number(roundAnswer.pointsEarned || (wasCorrect ? BASE_POINTS * multiplier : 0));
       if (wasCorrect) {
+        const baseShown = Number(roundAnswer.basePoints || BASE_POINTS) * multiplier;
+        const speedShown = Number(roundAnswer.speedBonus || 0) * multiplier;
+        const streakShown = Number(roundAnswer.streakBonus || 0) * multiplier;
+        const ansStreak = Number(roundAnswer.streak || myStreak || 1);
+
         bannerClass = "is-correct";
-        bannerText = isDouble ? "⚡ Resposta correta (2X)!" : "✓ Resposta correta!";
+        bannerText = ansStreak >= 2
+          ? `🔥 Resposta correta! (${ansStreak} seguidos)`
+          : isDouble
+            ? "⚡ Resposta correta (2X)!"
+            : "✓ Resposta correta!";
         bannerPts = `+${earned.toLocaleString("pt-BR")} PTS`;
+
+        breakdownHTML = `
+          <div class="points-breakdown-row">
+            <span>Acerto: <b>+${baseShown.toLocaleString("pt-BR")}</b></span>
+            <span>⚡ Rapidez: <b>+${speedShown.toLocaleString("pt-BR")}</b></span>
+            ${streakShown > 0 ? `<span class="is-fire">🔥 Sequência (${ansStreak}x): <b>+${streakShown.toLocaleString("pt-BR")}</b></span>` : ""}
+          </div>
+        `;
       } else {
         bannerClass = "is-incorrect";
-        bannerText = "✕ Não foi dessa vez";
+        bannerText = "✕ Não foi dessa vez (sequência zerada)";
         bannerPts = "0 PTS";
       }
     }
@@ -442,6 +567,7 @@ function renderGame(game, players) {
           <span>${bannerText}</span>
           <span class="round-result-pts">${bannerPts}</span>
         </div>
+        ${breakdownHTML}
         <h2>${escapeHTML(question.prompt)}</h2>
         <div class="player-answer-list">
           ${question.choices.map((choice, index) => {
@@ -478,15 +604,17 @@ function renderGame(game, players) {
   }
 
   const winner = players[0];
+  const winnerStreak = winner ? Math.max(getActiveStreak(winner, game), Number(winner.maxStreak || 0)) : 0;
   const tiedWinners = winner ? players.filter((player) => player.score === winner.score) : [];
   const myRankIndex = players.findIndex((p) => p.id === playerId);
   const myAnswers = Object.values(currentPlayer.answers || {});
   const myCorrectCount = myAnswers.filter((a) => a && a.correct).length;
+  const myBestStreak = Math.max(myStreak, Number(currentPlayer.maxStreak || 0));
 
   const winnerCard = winner
     ? `
       <div class="player-champion">
-        ${window.GameAvatar.render(winner.avatar, "game-avatar game-avatar-champion")}
+        ${renderAvatarWithFire(winner.avatar, "game-avatar game-avatar-champion", winnerStreak)}
         <span class="player-champion-tag">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DA SALA"}</span>
         <b>${tiedWinners.length > 1 ? tiedWinners.map((p) => escapeHTML(p.name)).join(" & ") : escapeHTML(winner.name)}</b>
         <small>${winner.score.toLocaleString("pt-BR")} PONTOS</small>
@@ -513,7 +641,7 @@ function renderGame(game, players) {
           <span>SEUS PONTOS</span>
         </div>
         <div class="my-stat-box is-green">
-          <strong>${myCorrectCount}/${GAME_QUESTIONS.length}</strong>
+          <strong>${myCorrectCount}/${GAME_QUESTIONS.length}${myBestStreak >= 2 ? ` · 🔥${myBestStreak}` : ""}</strong>
           <span>ACERTOS</span>
         </div>
       </div>
@@ -531,6 +659,7 @@ function renderGame(game, players) {
 
 function subscribeToRoom(roomCode) {
   cleanupListeners();
+  hasSeenRoomSnapshot = false;
   const roomDocRef = doc(db, "rooms", roomCode);
   const playersColRef = collection(db, "rooms", roomCode, "players");
 
@@ -554,6 +683,8 @@ function subscribeToRoom(roomCode) {
           id: d.id,
           name: data.name || "Participante",
           score: Number(data.score || 0),
+          streak: Number(data.streak || 0),
+          maxStreak: Number(data.maxStreak || 0),
           avatar: data.avatar || {},
           answers: data.answers || {}
         };
@@ -630,6 +761,8 @@ joinForm.addEventListener("submit", async (event) => {
       name,
       avatar,
       score: 0,
+      streak: 0,
+      maxStreak: 0,
       joinedAt: Date.now(),
       answers: {}
     };
@@ -674,7 +807,7 @@ gameContent.addEventListener("click", async (event) => {
 
   const choice = Number(button.dataset.choice);
   const durationMs = getQuestionDurationMs(currentGame);
-  const timeLeft = getRemainingMs(currentGame);
+  const timeLeft = getSyncedRemainingMs(currentGame);
   const multiplier = isDoublePointsQuestion(qIndex, question) ? 2 : 1;
 
   submitting = true;
@@ -684,12 +817,21 @@ gameContent.addEventListener("click", async (event) => {
   try {
     const correctIndex = getCorrectAnswerIndex(question);
     const correct = choice === correctIndex;
-    const speedBonus = Math.round((SPEED_BONUS_MAX * timeLeft) / durationMs);
-    const pointsEarned = correct ? (BASE_POINTS + speedBonus) * multiplier : 0;
+    const prevStreak = computePreviousStreak(currentPlayer?.answers || {}, qIndex);
+    const newStreak = correct ? prevStreak + 1 : 0;
+    const nextMaxStreak = Math.max(Number(currentPlayer?.maxStreak || 0), newStreak);
+
+    const speedBonus = correct ? Math.round((SPEED_BONUS_MAX * timeLeft) / durationMs) : 0;
+    const streakBonus = correct ? getStreakBonus(newStreak) : 0;
+    const pointsEarned = correct ? (BASE_POINTS + speedBonus + streakBonus) * multiplier : 0;
 
     const answerPayload = {
       choice,
       correct,
+      basePoints: correct ? BASE_POINTS : 0,
+      speedBonus,
+      streakBonus,
+      streak: newStreak,
       pointsEarned,
       doublePoints: multiplier === 2,
       answeredAt: Date.now()
@@ -697,11 +839,15 @@ gameContent.addEventListener("click", async (event) => {
 
     await updateDoc(doc(db, "rooms", playerRoom, "players", playerId), {
       score: increment(pointsEarned),
+      streak: newStreak,
+      maxStreak: nextMaxStreak,
       [`answers.${qKey}`]: answerPayload
     });
 
     if (currentPlayer) {
       currentPlayer.score = Number(currentPlayer.score || 0) + pointsEarned;
+      currentPlayer.streak = newStreak;
+      currentPlayer.maxStreak = nextMaxStreak;
       currentPlayer.answers = { ...(currentPlayer.answers || {}), [qKey]: answerPayload };
     }
     pendingChoice = null;

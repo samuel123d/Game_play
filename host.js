@@ -75,6 +75,60 @@ function getCorrectAnswerIndex(question) {
   return -1;
 }
 
+function computePreviousStreak(answers, currentQIndex) {
+  let count = 0;
+  for (let i = currentQIndex - 1; i >= 0; i--) {
+    const ans = answers?.[String(i)];
+    if (ans && ans.correct) {
+      count += 1;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+function getActiveStreak(player, game) {
+  if (!player || !game) return 0;
+  const answers = player.answers || {};
+  const qIndex = Number(game.questionIndex ?? -1);
+
+  if (game.status === "lobby" || qIndex < 0) return 0;
+
+  if (game.status === "question") {
+    const currentAns = answers[String(qIndex)];
+    if (currentAns !== undefined) {
+      return currentAns.correct ? 1 + computePreviousStreak(answers, qIndex) : 0;
+    }
+    return computePreviousStreak(answers, qIndex);
+  }
+
+  if (game.status === "review") {
+    const currentAns = answers[String(qIndex)];
+    if (!currentAns || !currentAns.correct) return 0;
+    return 1 + computePreviousStreak(answers, qIndex);
+  }
+
+  return computePreviousStreak(answers, GAME_QUESTIONS.length);
+}
+
+function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
+  const baseAvatar = window.GameAvatar.render(avatar, avatarClass);
+  if (streak < 2) return baseAvatar;
+
+  const tierClass = streak >= 4 ? "is-blazing" : streak === 3 ? "is-hot" : "is-warm";
+  return `
+    <span class="avatar-fire-wrap ${tierClass}" title="Sequência de ${streak} acertos!">
+      <span class="avatar-fire-aura" aria-hidden="true"></span>
+      <span class="avatar-fire-flames" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i>
+      </span>
+      ${baseAvatar}
+      <span class="avatar-fire-badge">🔥${streak}</span>
+    </span>
+  `;
+}
+
 function setDoubleStageTheme(active) {
   document.body.classList.toggle("is-double-round", Boolean(active));
 }
@@ -197,6 +251,8 @@ function subscribeToRoom(roomCode) {
           id: d.id,
           name: data.name || "Participante",
           score: Number(data.score || 0),
+          streak: Number(data.streak || 0),
+          maxStreak: Number(data.maxStreak || 0),
           avatar: data.avatar || {},
           answers: data.answers || {}
         };
@@ -351,7 +407,7 @@ function renderWelcomeScreen() {
   document.querySelector("#barOpenRoom")?.addEventListener("click", openNewRoom);
 }
 
-function renderStandings(players, qKey = null, isDouble = false) {
+function renderStandings(players, game, qKey = null, isDouble = false) {
   const top = players.slice(0, 5);
   if (!top.length) {
     return `<p class="game-empty">A classificação aparece aqui quando a rodada começar.</p>`;
@@ -359,15 +415,19 @@ function renderStandings(players, qKey = null, isDouble = false) {
   return `
     <ol class="game-standings">
       ${top.map((player, idx) => {
+        const pStreak = getActiveStreak(player, game);
         const roundPts = qKey !== null ? Number(player.answers?.[qKey]?.pointsEarned || 0) : 0;
         const gainBadge = roundPts > 0
           ? `<span class="game-round-gain${isDouble ? " is-double" : ""}">+${roundPts.toLocaleString("pt-BR")}${isDouble ? " ⚡" : ""}</span>`
           : "";
         return `
-          <li class="anim-stagger-item" style="--stagger:${idx}">
+          <li class="anim-stagger-item${pStreak >= 2 ? " is-on-fire" : ""}" style="--stagger:${idx}">
             <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
-            ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
-            <b>${escapeHTML(player.name)}</b>
+            ${renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak)}
+            <b>
+              ${escapeHTML(player.name)}
+              ${pStreak >= 2 ? `<span class="host-streak-pill">🔥 ${pStreak} SEGUIDOS</span>` : ""}
+            </b>
             ${gainBadge}
             <strong>${player.score.toLocaleString("pt-BR")} pts</strong>
           </li>
@@ -391,7 +451,7 @@ function renderDoublePointsShowcase(isReview) {
       </div>
       <div class="double-showcase-pill">
         <span>VALE ATÉ</span>
-        <b>3.000 PTS</b>
+        <b>6.000 PTS</b>
       </div>
     </section>
   `;
@@ -562,11 +622,11 @@ function renderGame(game, players) {
           </div>
           <div class="game-live-score">
             <span>PLACAR ATUAL</span>
-            ${renderStandings(players, qKey, isDouble)}
+            ${renderStandings(players, game, qKey, isDouble)}
           </div>
         ` : ""}
         <p class="game-screen-foot">
-          ${isQuestion ? "Responda no seu celular antes do tempo acabar." : "Confira a explicação e avance para a próxima rodada."}
+          ${isQuestion ? "Responda rápido no celular! Acertos seguidos acendem o fogo no avatar." : "Confira a explicação e avance para a próxima rodada."}
         </p>
       </div>
     `;
@@ -624,6 +684,7 @@ function renderGame(game, players) {
   }
 
   const winner = players[0];
+  const winnerStreak = winner ? Math.max(getActiveStreak(winner, game), Number(winner.maxStreak || 0)) : 0;
   const tiedWinners = winner ? players.filter((p) => p.score === winner.score) : [];
   const winnerTitle = !winner
     ? "Sem pontuações"
@@ -638,16 +699,16 @@ function renderGame(game, players) {
         <strong>PARABÉNS!</strong>
       </header>
       <div class="game-podium-hero anim-podium-pop">
-        ${winner ? window.GameAvatar.render(winner.avatar, "game-avatar game-avatar-projector-winner") : ""}
+        ${winner ? renderAvatarWithFire(winner.avatar, "game-avatar game-avatar-projector-winner", winnerStreak) : ""}
         <div class="game-winner-crown">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DO DESAFIO"}</div>
         <h2>${escapeHTML(winnerTitle)}</h2>
         ${winner ? `<strong class="game-winner-score">${winner.score.toLocaleString("pt-BR")} PONTOS</strong>` : ""}
       </div>
       <div class="game-final-standings">
         <span>CLASSIFICAÇÃO FINAL</span>
-        ${renderStandings(players)}
+        ${renderStandings(players, game)}
       </div>
-      <p class="game-screen-foot">Cada resposta correta valeu pontos extras pela rapidez. Obrigado por jogar!</p>
+      <p class="game-screen-foot">Cada resposta correta valeu pontos extras pela rapidez e pela sequência de acertos. Obrigado por jogar!</p>
     </div>
   `;
 
@@ -739,5 +800,3 @@ if (activeRoomCode) {
 } else {
   renderWelcomeScreen();
 }
-
-
