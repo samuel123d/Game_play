@@ -93,7 +93,7 @@ function getActiveStreak(player, game) {
   const answers = player.answers || {};
   const qIndex = Number(game.questionIndex ?? -1);
 
-  if (game.status === "lobby" || qIndex < 0) return 0;
+  if (game.status === "lobby" || game.status === "final" || qIndex < 0) return 0;
 
   if (game.status === "question") {
     const currentAns = answers[String(qIndex)];
@@ -109,7 +109,7 @@ function getActiveStreak(player, game) {
     return 1 + computePreviousStreak(answers, qIndex);
   }
 
-  return computePreviousStreak(answers, GAME_QUESTIONS.length);
+  return 0;
 }
 
 function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
@@ -120,11 +120,33 @@ function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
   return `
     <span class="avatar-fire-wrap ${tierClass}" title="Sequência de ${streak} acertos!">
       <span class="avatar-fire-aura" aria-hidden="true"></span>
-      <span class="avatar-fire-flames" aria-hidden="true">
-        <i></i><i></i><i></i><i></i><i></i>
+      <span class="avatar-fire-blaze" aria-hidden="true">
+        <i></i><i></i><i></i>
       </span>
       ${baseAvatar}
+      <span class="avatar-fire-flames" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </span>
+      <span class="avatar-fire-sparks" aria-hidden="true">
+        <i></i><i></i><i></i><i></i>
+      </span>
       <span class="avatar-fire-badge">🔥${streak}</span>
+    </span>
+  `;
+}
+
+function renderDancingAvatar(avatar, avatarClass, isChampion = true) {
+  const baseAvatar = window.GameAvatar.render(avatar, avatarClass);
+  return `
+    <span class="avatar-dance-wrap${isChampion ? " is-champion" : " is-podium"}" title="Comemorando!">
+      <span class="avatar-dance-halo" aria-hidden="true"></span>
+      <span class="avatar-dance-notes" aria-hidden="true">
+        <i>♪</i><i>✦</i><i>♫</i><i>★</i>
+      </span>
+      <span class="avatar-dance-body">
+        ${baseAvatar}
+      </span>
+      <span class="avatar-dance-shadow" aria-hidden="true"></span>
     </span>
   `;
 }
@@ -412,6 +434,7 @@ function renderStandings(players, game, qKey = null, isDouble = false) {
   if (!top.length) {
     return `<p class="game-empty">A classificação aparece aqui quando a rodada começar.</p>`;
   }
+  const isFinal = game?.status === "final";
   return `
     <ol class="game-standings">
       ${top.map((player, idx) => {
@@ -420,10 +443,14 @@ function renderStandings(players, game, qKey = null, isDouble = false) {
         const gainBadge = roundPts > 0
           ? `<span class="game-round-gain${isDouble ? " is-double" : ""}">+${roundPts.toLocaleString("pt-BR")}${isDouble ? " ⚡" : ""}</span>`
           : "";
+        const avatarHtml = isFinal && idx < 3
+          ? renderDancingAvatar(player.avatar, "game-avatar game-avatar-ranking", false)
+          : renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak);
+
         return `
           <li class="anim-stagger-item${pStreak >= 2 ? " is-on-fire" : ""}" style="--stagger:${idx}">
             <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
-            ${renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak)}
+            ${avatarHtml}
             <b>
               ${escapeHTML(player.name)}
               ${pStreak >= 2 ? `<span class="host-streak-pill">🔥 ${pStreak} SEGUIDOS</span>` : ""}
@@ -684,7 +711,6 @@ function renderGame(game, players) {
   }
 
   const winner = players[0];
-  const winnerStreak = winner ? Math.max(getActiveStreak(winner, game), Number(winner.maxStreak || 0)) : 0;
   const tiedWinners = winner ? players.filter((p) => p.score === winner.score) : [];
   const winnerTitle = !winner
     ? "Sem pontuações"
@@ -699,7 +725,7 @@ function renderGame(game, players) {
         <strong>PARABÉNS!</strong>
       </header>
       <div class="game-podium-hero anim-podium-pop">
-        ${winner ? renderAvatarWithFire(winner.avatar, "game-avatar game-avatar-projector-winner", winnerStreak) : ""}
+        ${winner ? renderDancingAvatar(winner.avatar, "game-avatar game-avatar-projector-winner", true) : ""}
         <div class="game-winner-crown">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DO DESAFIO"}</div>
         <h2>${escapeHTML(winnerTitle)}</h2>
         ${winner ? `<strong class="game-winner-score">${winner.score.toLocaleString("pt-BR")} PONTOS</strong>` : ""}

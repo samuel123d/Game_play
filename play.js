@@ -152,7 +152,7 @@ function getActiveStreak(player, game) {
   const answers = player.answers || {};
   const qIndex = Number(game.questionIndex ?? -1);
 
-  if (game.status === "lobby" || qIndex < 0) return 0;
+  if (game.status === "lobby" || game.status === "final" || qIndex < 0) return 0;
 
   if (game.status === "question") {
     const currentAns = answers[String(qIndex)];
@@ -168,7 +168,7 @@ function getActiveStreak(player, game) {
     return 1 + computePreviousStreak(answers, qIndex);
   }
 
-  return computePreviousStreak(answers, GAME_QUESTIONS.length);
+  return 0;
 }
 
 function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
@@ -179,11 +179,33 @@ function renderAvatarWithFire(avatar, avatarClass, streak = 0) {
   return `
     <span class="avatar-fire-wrap ${tierClass}" title="Sequência de ${streak} acertos!">
       <span class="avatar-fire-aura" aria-hidden="true"></span>
-      <span class="avatar-fire-flames" aria-hidden="true">
-        <i></i><i></i><i></i><i></i><i></i>
+      <span class="avatar-fire-blaze" aria-hidden="true">
+        <i></i><i></i><i></i>
       </span>
       ${baseAvatar}
+      <span class="avatar-fire-flames" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </span>
+      <span class="avatar-fire-sparks" aria-hidden="true">
+        <i></i><i></i><i></i><i></i>
+      </span>
       <span class="avatar-fire-badge">🔥${streak}</span>
+    </span>
+  `;
+}
+
+function renderDancingAvatar(avatar, avatarClass, isChampion = true) {
+  const baseAvatar = window.GameAvatar.render(avatar, avatarClass);
+  return `
+    <span class="avatar-dance-wrap${isChampion ? " is-champion" : " is-podium"}" title="Comemorando!">
+      <span class="avatar-dance-halo" aria-hidden="true"></span>
+      <span class="avatar-dance-notes" aria-hidden="true">
+        <i>♪</i><i>✦</i><i>♫</i><i>★</i>
+      </span>
+      <span class="avatar-dance-body">
+        ${baseAvatar}
+      </span>
+      <span class="avatar-dance-shadow" aria-hidden="true"></span>
     </span>
   `;
 }
@@ -249,6 +271,7 @@ function setConnected(connected) {
 
 function renderRanking(players, game) {
   const topPlayers = (players || []).slice(0, 5);
+  const isFinal = game?.status === "final";
   return `
     <div class="player-ranking">
       <span>PLACAR DA SALA</span>
@@ -256,10 +279,14 @@ function renderRanking(players, game) {
         ${topPlayers.map((player, index) => {
           const isMe = player.id === playerId;
           const pStreak = getActiveStreak(player, game);
+          const avatarHtml = isFinal && index < 3
+            ? renderDancingAvatar(player.avatar, "game-avatar game-avatar-ranking", false)
+            : renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak);
+
           return `
             <li class="${isMe ? "is-me" : ""}" style="--stagger:${index}">
               <span>${String(index + 1).padStart(2, "0")}</span>
-              ${renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak)}
+              ${avatarHtml}
               <b>
                 <span class="ranking-player-name">${escapeHTML(player.name)}</span>
                 ${pStreak >= 2 ? `<span class="streak-inline-pill">🔥 ${pStreak}x</span>` : ""}
@@ -604,17 +631,19 @@ function renderGame(game, players) {
   }
 
   const winner = players[0];
-  const winnerStreak = winner ? Math.max(getActiveStreak(winner, game), Number(winner.maxStreak || 0)) : 0;
   const tiedWinners = winner ? players.filter((player) => player.score === winner.score) : [];
   const myRankIndex = players.findIndex((p) => p.id === playerId);
   const myAnswers = Object.values(currentPlayer.answers || {});
   const myCorrectCount = myAnswers.filter((a) => a && a.correct).length;
-  const myBestStreak = Math.max(myStreak, Number(currentPlayer.maxStreak || 0));
+  const myBestStreak = Math.max(
+    computePreviousStreak(currentPlayer.answers || {}, GAME_QUESTIONS.length),
+    Number(currentPlayer.maxStreak || 0)
+  );
 
   const winnerCard = winner
     ? `
       <div class="player-champion">
-        ${renderAvatarWithFire(winner.avatar, "game-avatar game-avatar-champion", winnerStreak)}
+        ${renderDancingAvatar(winner.avatar, "game-avatar game-avatar-champion", true)}
         <span class="player-champion-tag">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DA SALA"}</span>
         <b>${tiedWinners.length > 1 ? tiedWinners.map((p) => escapeHTML(p.name)).join(" & ") : escapeHTML(winner.name)}</b>
         <small>${winner.score.toLocaleString("pt-BR")} PONTOS</small>
