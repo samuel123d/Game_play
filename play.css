@@ -1,0 +1,93 @@
+:root {
+  color-scheme: dark;
+  --night: #080a18;
+  --panel: #151a37;
+  --line: rgba(165,176,255,.17);
+  --ink: #f5f6ff;
+  --muted: #a4acc7;
+  --cyan: #66f4ff;
+  --pink: #ff63da;
+  --green: #67f3bf;
+  font-family: "Segoe UI", "Manrope", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--ink); background: radial-gradient(ellipse at 75% -10%,rgba(80,83,187,.23),transparent 49%),radial-gradient(ellipse at 4% 68%,rgba(255,66,201,.09),transparent 44%),var(--night); }
+button, input { font: inherit; }
+[hidden] { display: none !important; }
+.player-shell { width: min(560px,100%); min-height: 100vh; margin: auto; padding: 0 22px max(24px,env(safe-area-inset-bottom)); }
+.player-header { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(157,167,224,.11); }
+.player-brand { color: var(--ink); font-size: 13px; font-weight: 800; letter-spacing: .18em; text-decoration: none; }
+.player-brand span { color: var(--cyan); }
+.player-audio-toggle { min-height: 34px; padding: 0 10px; border: 1px solid rgba(102,244,255,.2); border-radius: 20px; color: #b7c8e5; background: rgba(102,244,255,.04); font-size: 9px; cursor: pointer; touch-action: manipulation; }
+.player-audio-toggle[aria-pressed="true"] { border-color: rgba(103,243,191,.36); color: var(--green); background: rgba(103,243,191,.07); }
+.player-connection { color: #78819f; font: 9px Consolas,monospace; letter-spacing: .12em; }
+.player-connection.is-connected { color: var(--green); }
+.player-join { padding: clamp(36px,9vh,84px) 2px 24px; }
+.player-eyebrow { color: var(--cyan); font: 9px Consolas,monospace; letter-spacing: .15em; }
+.player-join h1 { margin: 23px 0 14px; font-size: clamp(48px,12vw,70px); line-height: .96; letter-spacing: -.06em; }
+.player-join h1 span { color: var(--pink); }
+.player-intro { max-width: 410px; margin: 0 0 28px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.player-join label { display: block; margin: 17px 0 8px; color: var(--cyan); font: 9px Consolas,monospace; letter-spacing: .12em; }
+.player-join input { width: 100%; min-height: 52px; padding: 0 14px; border: 1px solid rgba(102,244,255,.24); border-radius: 9px; outline: none; color: var(--ink); background: rgba(17,21,47,.86); font-size: 15px; }
+#playerRoomCode { max-width: 190px; text-align: center; font: 22px Consolas,monospace; letter-spacing: .2em; }
+.player-join input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(102,244,255,.08); }
+.player-join form > button { width: 100%; min-height: 53px; margin-top: 20px; border: 0; border-radius: 9px; color: #080a18; background: linear-gradient(110deg,var(--cyan),#a1f7e5); font-weight: 800; cursor: pointer; }
+.player-join form > button span { margin-left: 9px; font-size: 19px; }
+.player-join form > button:disabled { opacity: .6; }
+.avatar-creator { margin-top: 21px; padding: 15px; border: 1px solid rgba(146,162,255,.17); border-radius: 12px; background: linear-gradient(145deg,rgba(26,32,67,.62),rgba(12,15,37,.62)); }
+.avatar-creator-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.avatar-creator-heading > div:first-child > span { color: var(--pink); font: 8px Consolas,monospace; letter-spacing: .14em; }
+.avatar-creator-heading h2 { margin: 5px 0 0; font-size: 16px; }
+.avatar-fields { margin-top: 12px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 10px; }
+.avatar-fields label { min-width: 0; margin-top: 10px; color: #95a0c1; font: 8px Consolas,monospace; letter-spacing: .08em; }
+.avatar-fields select { width: 100%; min-height: 39px; margin-top: 6px; padding: 0 9px; border: 1px solid rgba(146,162,255,.17); border-radius: 7px; color: var(--ink); background: #11152d; font: 11px "Segoe UI",sans-serif; }
+.avatar-creator > p { margin: 11px 0 0; color: #8089a7; font-size: 9px; line-height: 1.5; }
+.game-avatar { display: block; flex: none; border: 1px solid rgba(102,244,255,.24); border-radius: 50%; background: #1b2449; box-shadow: 0 4px 13px rgba(0,0,0,.24); }
+.game-avatar-preview { width: 64px; height: 64px; }
+.player-identity { margin: 17px 0 -7px; display: flex; align-items: center; gap: 10px; color: #96a0bf; font: 8px Consolas,monospace; letter-spacing: .1em; }
+.game-avatar-identity { width: 44px; height: 44px; }
+.player-identity b { display: block; margin-top: 4px; color: #eff3ff; font: 700 12px "Segoe UI",sans-serif; letter-spacing: 0; }
+.player-error { min-height: 18px; margin: 9px 0 0; color: #ff9db7; font-size: 11px; }
+.player-privacy { margin-top: 22px; color: #7f87a4; font-size: 10px; line-height: 1.7; }
+.player-status { min-height: 18px; margin: 10px 0 0; color: #8992ae; font-size: 10px; }
+.player-card { margin-top: clamp(30px,8vh,70px); padding: clamp(21px,6vw,32px); border: 1px solid var(--line); border-radius: 18px; background: radial-gradient(ellipse at 90% 0,rgba(102,244,255,.1),transparent 44%),linear-gradient(145deg,rgba(27,32,68,.93),rgba(12,15,37,.96)); box-shadow: 0 22px 65px rgba(0,0,0,.25); }
+.player-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--cyan); font: 9px Consolas,monospace; letter-spacing: .11em; }
+.player-score { color: var(--green); white-space: nowrap; }
+.player-card h2 { margin: 25px 0 20px; font-size: clamp(23px,6vw,33px); line-height: 1.24; letter-spacing: -.035em; }
+.player-waiting { padding: 17px 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.player-answer-list { display: grid; gap: 10px; }
+.player-answer { width: 100%; min-height: 61px; padding: 12px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(146,162,255,.18); border-radius: 10px; color: #e4e8f8; background: rgba(23,28,61,.85); text-align: left; font-size: 12px; line-height: 1.5; cursor: pointer; touch-action: manipulation; }
+.player-answer:active:not(:disabled) { transform: scale(.99); }
+.player-answer:disabled { cursor: default; opacity: .72; }
+.player-answer > span:first-child { width: 29px; height: 29px; flex: none; display: grid; place-items: center; border-radius: 8px; color: #090c1e; background: var(--cyan); font-weight: 800; }
+.player-answer.is-selected { border-color: var(--cyan); background: rgba(102,244,255,.1); }
+.player-answer.is-correct { border-color: var(--green); color: var(--green); }
+.player-answer.is-correct > span:first-child { background: var(--green); }
+.player-player-feedback { min-height: 19px; margin: 13px 0 0; color: var(--green); font-size: 11px; }
+.player-timer { height: 5px; margin: 0 0 17px; overflow: hidden; border-radius: 9px; background: rgba(157,167,224,.16); }
+.player-timer i { display: block; width: 100%; height: 100%; background: linear-gradient(90deg,var(--green),var(--cyan),var(--pink)); transition: width .2s linear; }
+.player-review { margin-top: 17px; padding: 14px; border: 1px solid rgba(103,243,191,.2); border-radius: 10px; color: #cceee4; background: rgba(103,243,191,.06); font-size: 12px; line-height: 1.65; }
+.player-review b { display: block; margin-bottom: 6px; color: var(--green); font: 9px Consolas,monospace; letter-spacing: .12em; }
+.player-review p { margin: 7px 0 0; color: var(--muted); }
+.player-ranking { margin-top: 20px; }
+.player-ranking > span { color: #9099b8; font: 9px Consolas,monospace; letter-spacing: .12em; }
+.player-ranking ol { margin: 9px 0 0; padding: 0; list-style: none; }
+.player-ranking li { min-height: 39px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid rgba(157,167,224,.09); color: #cfd4e7; font-size: 11px; }
+.player-ranking li > span:first-child { color: var(--cyan); font: 9px Consolas,monospace; }
+.player-ranking li b { flex: 1; }
+.player-ranking li > span:last-child { color: var(--green); }
+.game-avatar-ranking { width: 28px; height: 28px; }
+.player-champion { margin: 28px 0; padding: 21px; display: flex; flex-direction: column; align-items: center; border: 1px solid rgba(255,99,218,.26); border-radius: 13px; background: rgba(255,99,218,.07); text-align: center; }
+.game-avatar-champion { width: 72px; height: 72px; margin-bottom: 5px; }
+.player-champion > span { color: var(--pink); font-size: 25px; }
+.player-champion b { display: block; margin: 8px 0; font-size: 25px; }
+.player-champion small { color: var(--muted); font: 10px Consolas,monospace; }
+@media (max-width: 390px) {
+  .player-shell { padding-right: 16px; padding-left: 16px; }
+  .player-header { gap: 5px; }
+  .player-brand { font-size: 11px; }
+  .player-connection { font-size: 7px; }
+  .player-audio-toggle { padding: 0 7px; font-size: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
