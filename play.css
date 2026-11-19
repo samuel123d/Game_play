@@ -11,8 +11,6 @@
   --accent: #38bdf8;
   --accent-ink: #06101d;
   --gold: #fbbf24;
-  --silver: #cbd5e1;
-  --bronze: #f97316;
   --correct: #34d399;
   --incorrect: #fb7185;
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -78,11 +76,11 @@ svg.ui-icon[fill="none"] {
 
 /* Header */
 .player-header {
-  min-height: 60px;
+  min-height: 58px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
@@ -104,118 +102,10 @@ svg.ui-icon[fill="none"] {
   color: var(--accent);
 }
 
-.player-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.player-pill-btn {
-  min-height: 36px;
-  padding: 0 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  touch-action: manipulation;
-  white-space: nowrap;
-  transition: border-color 0.16s, background-color 0.16s, color 0.16s;
-}
-
-.player-pill-btn:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
-}
-
-.player-pill-btn[aria-pressed="true"] {
-  border-color: rgba(52, 211, 153, 0.45);
-  color: var(--correct);
-  background: rgba(52, 211, 153, 0.1);
-}
-
-.player-pill-icon {
-  width: 36px;
-  padding: 0;
-  justify-content: center;
-}
-
-.audio-control-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.audio-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: min(240px, calc(100vw - 32px));
-  padding: 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  background: var(--bg-elevated);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
-  z-index: 40;
-}
-
-.audio-popover-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  color: var(--text-secondary);
-  font: 600 10px var(--font-mono);
-  letter-spacing: 0.12em;
-}
-
-.text-link-btn {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.text-link-btn:hover {
-  text-decoration: underline;
-}
-
-.volume-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 5px 8px;
-  align-items: center;
-  margin-top: 10px;
-  font-size: 12px;
-}
-
-.volume-row output {
-  color: var(--text-secondary);
-  font: 600 11px var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.volume-row input[type="range"] {
-  grid-column: 1 / -1;
-  width: 100%;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
 .player-connection {
-  height: 36px;
-  padding: 0 9px;
-  border-radius: 10px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   color: var(--text-secondary);
@@ -989,13 +879,6 @@ svg.ui-icon[fill="none"] {
   }
   #playerRoomCode {
     letter-spacing: 0.22em;
-  }
-  .player-brand {
-    font-size: 12px;
-    letter-spacing: 0.12em;
-  }
-  .player-pill-btn {
-    padding: 0 9px;
   }
 }
 

@@ -12,8 +12,18 @@ import {
 const gameContent = document.querySelector("#gameContent");
 const hostStatus = document.querySelector("#hostStatus");
 const hostActions = document.querySelector("#hostActions");
-const audioToggle = document.querySelector("#audioToggle");
 const fullscreenToggle = document.querySelector("#fullscreenToggle");
+
+const audioToggle = document.querySelector("#audioToggle");
+const audioToggleLabel = document.querySelector("#audioToggleLabel");
+const audioWavePath = document.querySelector("#audioWavePath");
+const audioMixerBtn = document.querySelector("#audioMixerBtn");
+const audioPopover = document.querySelector("#audioPopover");
+const audioTestBtn = document.querySelector("#audioTestBtn");
+const musicVolumeSlider = document.querySelector("#musicVolumeSlider");
+const musicVolumeValue = document.querySelector("#musicVolumeValue");
+const sfxVolumeSlider = document.querySelector("#sfxVolumeSlider");
+const sfxVolumeValue = document.querySelector("#sfxVolumeValue");
 
 const QUESTION_DURATION_MS = 20000;
 
@@ -24,6 +34,12 @@ let currentGame = null;
 let currentPlayers = [];
 let timerInterval = 0;
 let autoRevealLock = false;
+
+let lastStateSoundKey = "";
+let lastUrgentSecond = -1;
+let knownPlayerCount = -1;
+let knownAnsweredKey = "";
+let knownAnsweredCount = 0;
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
@@ -37,6 +53,43 @@ function escapeHTML(value) {
 
 function generateRoomCode() {
   return String(Math.floor(10000 + Math.random() * 90000));
+}
+
+function syncMusicForStatus(status) {
+  if (!window.GameAudio) return;
+  if (status === "lobby") window.GameAudio.setTrack("lobby");
+  else if (status === "question") window.GameAudio.setTrack("question");
+  else if (status === "review") window.GameAudio.setTrack("review");
+  else if (status === "final") window.GameAudio.setTrack("victory");
+  else window.GameAudio.setTrack("none");
+}
+
+function updateAudioButton() {
+  if (!window.GameAudio || !audioToggle) return;
+  const enabled = window.GameAudio.isEnabled();
+  audioToggle.setAttribute("aria-pressed", String(enabled));
+  if (audioToggleLabel) {
+    audioToggleLabel.textContent = enabled ? "Som ligado" : "Som desligado";
+  }
+  if (audioWavePath) {
+    audioWavePath.style.opacity = enabled ? "1" : "0.28";
+  }
+}
+
+function initAudioControls() {
+  if (!window.GameAudio) return;
+  const prefs = window.GameAudio.getPrefs();
+  if (musicVolumeSlider && musicVolumeValue) {
+    const pct = Math.round(prefs.musicVolume * 100);
+    musicVolumeSlider.value = String(pct);
+    musicVolumeValue.textContent = `${pct}%`;
+  }
+  if (sfxVolumeSlider && sfxVolumeValue) {
+    const pct = Math.round(prefs.sfxVolume * 100);
+    sfxVolumeSlider.value = String(pct);
+    sfxVolumeValue.textContent = `${pct}%`;
+  }
+  updateAudioButton();
 }
 
 function cleanupListeners() {
@@ -55,6 +108,10 @@ function subscribeToRoom(roomCode) {
   activeRoomCode = roomCode;
   sessionStorage.setItem("conexao-host-room", roomCode);
   currentPlayers = [];
+  knownPlayerCount = -1;
+  knownAnsweredKey = "";
+  knownAnsweredCount = 0;
+  lastStateSoundKey = "";
 
   const roomDocRef = doc(db, "rooms", roomCode);
   const playersColRef = collection(db, "rooms", roomCode, "players");
@@ -96,6 +153,12 @@ function subscribeToRoom(roomCode) {
         };
       })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
+
+    // Toca efeito no telão quando um novo participante entra na sala
+    if (knownPlayerCount >= 0 && currentPlayers.length > knownPlayerCount && currentGame?.status === "lobby") {
+      window.GameAudio?.playEffect("join");
+    }
+    knownPlayerCount = currentPlayers.length;
 
     if (currentGame && currentGame.status !== "closed") {
       renderGame(currentGame, currentPlayers);
@@ -202,13 +265,14 @@ async function closeRoom() {
     }
   }
 
-  void window.GameAudio.setEnabled(false);
-  updateAudioButton();
+  window.GameAudio?.setTrack("none");
+  window.GameConfetti?.stop();
   renderWelcomeScreen();
 }
 
 function renderWelcomeScreen() {
   window.clearInterval(timerInterval);
+  syncMusicForStatus("none");
   gameContent.innerHTML = `
     <div class="game-screen game-welcome-screen">
       <p class="eyebrow">ATIVIDADE INTERATIVA EM TEMPO REAL</p>
@@ -251,6 +315,27 @@ function renderStandings(players) {
 function renderGame(game, players) {
   window.clearInterval(timerInterval);
   const joinUrl = `${window.location.origin}/play?room=${encodeURIComponent(game.roomCode)}`;
+  const qIndex = Number(game.questionIndex);
+
+  // Sincroniza música de fundo e efeitos sonoros exclusivamente no telão
+  syncMusicForStatus(game.status);
+  const stateSoundKey = `${game.status}:${qIndex}`;
+  if (stateSoundKey !== lastStateSoundKey) {
+    if (lastStateSoundKey) {
+      if (game.status === "question") {
+        lastUrgentSecond = -1;
+        window.GameAudio?.playEffect(qIndex === 0 ? "start" : "tick");
+      } else if (game.status === "review") {
+        window.GameAudio?.playEffect("correct");
+      } else if (game.status === "final") {
+        window.GameAudio?.playEffect("champion");
+        window.GameConfetti?.burst();
+      }
+    } else if (game.status === "final") {
+      window.GameConfetti?.burst();
+    }
+    lastStateSoundKey = stateSoundKey;
+  }
 
   if (game.status === "lobby") {
     let qrSvg = "";
@@ -320,7 +405,6 @@ function renderGame(game, players) {
     return;
   }
 
-  const qIndex = Number(game.questionIndex);
   const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
 
@@ -328,6 +412,17 @@ function renderGame(game, players) {
     const isQuestion = game.status === "question";
     const isReview = game.status === "review";
     const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
+
+    // Efeito sonoro discreto no telão a cada resposta recebida
+    if (isQuestion) {
+      if (knownAnsweredKey !== qKey) {
+        knownAnsweredKey = qKey;
+        knownAnsweredCount = answeredCount;
+      } else if (answeredCount > knownAnsweredCount) {
+        knownAnsweredCount = answeredCount;
+        window.GameAudio?.playEffect("select");
+      }
+    }
 
     if (isQuestion && players.length > 0 && answeredCount >= players.length && !autoRevealLock) {
       void revealAnswer();
@@ -376,10 +471,25 @@ function renderGame(game, players) {
     if (isQuestion && game.questionEndsAt) {
       const updateTimer = () => {
         const remaining = Math.max(0, game.questionEndsAt - Date.now());
+        const secLeft = Math.ceil(remaining / 1000);
+        const urgent = secLeft > 0 && secLeft <= 5;
+
         const timerEl = gameContent.querySelector("#gameTimer");
         const fillEl = gameContent.querySelector("#gameTimerFill");
-        if (timerEl) timerEl.textContent = String(Math.ceil(remaining / 1000)).padStart(2, "0");
-        if (fillEl) fillEl.style.width = `${(remaining / QUESTION_DURATION_MS) * 100}%`;
+        if (timerEl) {
+          timerEl.textContent = String(secLeft).padStart(2, "0");
+          timerEl.classList.toggle("is-urgent", urgent);
+        }
+        if (fillEl) {
+          fillEl.style.width = `${(remaining / QUESTION_DURATION_MS) * 100}%`;
+          fillEl.classList.toggle("is-urgent", urgent);
+        }
+
+        if (urgent && secLeft !== lastUrgentSecond) {
+          lastUrgentSecond = secLeft;
+          window.GameAudio?.playEffect("urgentTick");
+        }
+
         if (remaining === 0 && !autoRevealLock) {
           void revealAnswer();
         }
@@ -447,22 +557,57 @@ function renderGame(game, players) {
   document.querySelector("#btnClose")?.addEventListener("click", closeRoom);
 }
 
-function updateAudioButton() {
-  const enabled = window.GameAudio.isEnabled();
-  audioToggle.setAttribute("aria-pressed", String(enabled));
-  audioToggle.querySelector("span").textContent = enabled ? "♫ Som ligado" : "♫ Som desligado";
-}
-
-audioToggle.addEventListener("click", async () => {
+audioToggle?.addEventListener("click", async () => {
   try {
-    await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
+    const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
     updateAudioButton();
+    if (enabled) {
+      syncMusicForStatus(currentGame?.status || "none");
+      window.GameAudio.playEffect("select");
+    }
   } catch (err) {
     hostStatus.textContent = `Áudio indisponível: ${err.message}`;
   }
 });
 
-fullscreenToggle.addEventListener("click", () => {
+audioMixerBtn?.addEventListener("click", () => {
+  if (!audioPopover) return;
+  const willShow = audioPopover.hidden;
+  audioPopover.hidden = !willShow;
+  audioMixerBtn.setAttribute("aria-expanded", String(willShow));
+});
+
+document.addEventListener("click", (event) => {
+  if (!audioPopover || audioPopover.hidden) return;
+  if (!event.target.closest(".audio-control-wrap")) {
+    audioPopover.hidden = true;
+    audioMixerBtn?.setAttribute("aria-expanded", "false");
+  }
+});
+
+musicVolumeSlider?.addEventListener("input", () => {
+  const pct = Number(musicVolumeSlider.value);
+  if (musicVolumeValue) musicVolumeValue.textContent = `${pct}%`;
+  window.GameAudio?.setMusicVolume(pct / 100);
+});
+
+sfxVolumeSlider?.addEventListener("input", () => {
+  const pct = Number(sfxVolumeSlider.value);
+  if (sfxVolumeValue) sfxVolumeValue.textContent = `${pct}%`;
+  window.GameAudio?.setSfxVolume(pct / 100);
+});
+
+audioTestBtn?.addEventListener("click", async () => {
+  if (!window.GameAudio) return;
+  if (!window.GameAudio.isEnabled()) {
+    await window.GameAudio.setEnabled(true);
+    updateAudioButton();
+    syncMusicForStatus(currentGame?.status || "none");
+  }
+  window.GameAudio.playEffect("correct");
+});
+
+fullscreenToggle?.addEventListener("click", () => {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen?.();
   } else {
@@ -472,9 +617,11 @@ fullscreenToggle.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key.toLowerCase() === "f" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
-    fullscreenToggle.click();
+    fullscreenToggle?.click();
   }
 });
+
+initAudioControls();
 
 if (activeRoomCode) {
   subscribeToRoom(activeRoomCode);

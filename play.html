@@ -21,58 +21,7 @@
     <main class="player-shell">
       <header class="player-header">
         <a href="./" class="player-brand">CONEXÃO<span>.</span></a>
-
-        <div class="player-header-actions">
-          <div class="audio-control-wrap">
-            <button class="player-pill-btn" id="playerAudioToggle" type="button" aria-pressed="false">
-              <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M11 5L6 9H2v6h4l5 4V5z" />
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-              </svg>
-              <span id="playerAudioLabel">Som</span>
-            </button>
-            <button
-              class="player-pill-btn player-pill-icon"
-              id="playerAudioMixerBtn"
-              type="button"
-              title="Ajustar volumes"
-              aria-label="Ajustar volumes"
-              aria-expanded="false"
-              aria-controls="playerAudioPopover"
-            >
-              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                <line x1="4" y1="21" x2="4" y2="14" />
-                <line x1="4" y1="10" x2="4" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="12" />
-                <line x1="12" y1="8" x2="12" y2="3" />
-                <line x1="20" y1="21" x2="20" y2="16" />
-                <line x1="20" y1="12" x2="20" y2="3" />
-                <line x1="1" y1="14" x2="7" y2="14" />
-                <line x1="9" y1="8" x2="15" y2="8" />
-                <line x1="17" y1="16" x2="23" y2="16" />
-              </svg>
-            </button>
-
-            <div class="audio-popover" id="playerAudioPopover" hidden>
-              <div class="audio-popover-head">
-                <span>ÁUDIO DO JOGO</span>
-                <button type="button" class="text-link-btn" id="playerAudioTestBtn">Testar</button>
-              </div>
-              <label class="volume-row" for="playerMusicSlider">
-                <span>Música</span>
-                <output id="playerMusicVal">65%</output>
-                <input id="playerMusicSlider" type="range" min="0" max="100" value="65" />
-              </label>
-              <label class="volume-row" for="playerSfxSlider">
-                <span>Efeitos</span>
-                <output id="playerSfxVal">85%</output>
-                <input id="playerSfxSlider" type="range" min="0" max="100" value="85" />
-              </label>
-            </div>
-          </div>
-
-          <span class="player-connection" id="playerConnection">OFFLINE</span>
-        </div>
+        <span class="player-connection" id="playerConnection">OFFLINE</span>
       </header>
 
       <section class="player-join" id="playerJoin">
@@ -185,7 +134,6 @@
 
     <script src="./avatar.js"></script>
     <script src="./confetti.js"></script>
-    <script src="./game-audio.js"></script>
     <script type="module" src="./play.js"></script>
   </body>
 </html>

@@ -23,16 +23,6 @@ const statusLabel = document.querySelector("#playerStatus");
 const avatarPreview = document.querySelector("#avatarPreview");
 const avatarFields = [...document.querySelectorAll("[data-avatar-field]")];
 
-const audioToggle = document.querySelector("#playerAudioToggle");
-const audioLabel = document.querySelector("#playerAudioLabel");
-const audioMixerBtn = document.querySelector("#playerAudioMixerBtn");
-const audioPopover = document.querySelector("#playerAudioPopover");
-const audioTestBtn = document.querySelector("#playerAudioTestBtn");
-const musicSlider = document.querySelector("#playerMusicSlider");
-const musicVal = document.querySelector("#playerMusicVal");
-const sfxSlider = document.querySelector("#playerSfxSlider");
-const sfxVal = document.querySelector("#playerSfxVal");
-
 const QUESTION_DURATION_MS = 20000;
 
 const params = new URLSearchParams(location.search);
@@ -48,8 +38,7 @@ let unsubRoom = null;
 let unsubPlayers = null;
 let timerInterval = 0;
 let submitting = false;
-let lastSoundKey = "";
-let lastUrgentSecond = -1;
+let burstDone = false;
 
 function selectedAvatar() {
   return Object.fromEntries(avatarFields.map((field) => [field.dataset.avatarField, field.value]));
@@ -77,41 +66,6 @@ function showStatus(message, error = false) {
 function setConnected(connected) {
   connectionLabel.textContent = connected ? "AO VIVO" : "OFFLINE";
   connectionLabel.classList.toggle("is-connected", connected);
-}
-
-function syncAudioUi() {
-  const enabled = window.GameAudio.isEnabled();
-  audioToggle.setAttribute("aria-pressed", String(enabled));
-  if (audioLabel) {
-    audioLabel.textContent = enabled ? "Ligado" : "Som";
-  }
-}
-
-function initAudioControls() {
-  const prefs = window.GameAudio.getPrefs();
-  if (musicSlider && musicVal) {
-    const pct = Math.round(prefs.musicVolume * 100);
-    musicSlider.value = String(pct);
-    musicVal.textContent = `${pct}%`;
-  }
-  if (sfxSlider && sfxVal) {
-    const pct = Math.round(prefs.sfxVolume * 100);
-    sfxSlider.value = String(pct);
-    sfxVal.textContent = `${pct}%`;
-  }
-  syncAudioUi();
-}
-
-function syncMusicForStatus(status) {
-  if (!status) {
-    window.GameAudio.setTrack("none");
-    return;
-  }
-  if (status === "lobby") window.GameAudio.setTrack("lobby");
-  else if (status === "question") window.GameAudio.setTrack("question");
-  else if (status === "review") window.GameAudio.setTrack("review");
-  else if (status === "final") window.GameAudio.setTrack("victory");
-  else window.GameAudio.setTrack("none");
 }
 
 function renderRanking(players) {
@@ -160,14 +114,13 @@ function clearSession() {
   currentGame = null;
   currentPlayers = [];
   currentPlayer = null;
-  lastSoundKey = "";
+  burstDone = false;
   setConnected(false);
 }
 
 function exitToJoinScreen(message) {
   gameSection.hidden = true;
   joinSection.hidden = false;
-  window.GameAudio.setTrack("none");
   window.GameConfetti?.stop();
   showStatus(message);
   clearSession();
@@ -194,28 +147,6 @@ function renderGame(game, players) {
   const question = GAME_QUESTIONS[qIndex];
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
 
-  syncMusicForStatus(game.status);
-
-  const soundKey = `${game.status}:${qIndex}`;
-  if (soundKey && soundKey !== lastSoundKey) {
-    if (lastSoundKey) {
-      if (game.status === "question") {
-        lastUrgentSecond = -1;
-        window.GameAudio.playEffect(qIndex === 0 ? "start" : "tick");
-      } else if (game.status === "review") {
-        if (!roundAnswer) window.GameAudio.playEffect("timeout");
-        else if (roundAnswer.correct) window.GameAudio.playEffect("correct");
-        else window.GameAudio.playEffect("incorrect");
-      } else if (game.status === "final") {
-        window.GameAudio.playEffect("champion");
-        window.GameConfetti?.burst();
-      }
-    } else if (game.status === "final") {
-      window.GameConfetti?.burst();
-    }
-    lastSoundKey = soundKey;
-  }
-
   joinSection.hidden = true;
   gameSection.hidden = false;
 
@@ -236,6 +167,7 @@ function renderGame(game, players) {
   `;
 
   if (game.status === "lobby") {
+    burstDone = false;
     gameContent.innerHTML = `
       <article class="player-card">
         ${header}
@@ -313,12 +245,6 @@ function renderGame(game, players) {
         fill.style.width = `${Math.max(0, (msLeft / QUESTION_DURATION_MS) * 100)}%`;
         fill.classList.toggle("is-urgent", urgent);
       }
-
-      if (urgent && lastChoice === null && secLeft !== lastUrgentSecond) {
-        lastUrgentSecond = secLeft;
-        window.GameAudio.playEffect("urgentTick");
-      }
-
       if (msLeft === 0 && lastChoice === null) {
         const feedback = gameContent.querySelector("#playerFeedback");
         if (feedback) feedback.textContent = "Tempo esgotado! Aguarde a resposta correta no telão.";
@@ -383,6 +309,11 @@ function renderGame(game, players) {
       </article>
     `;
     return;
+  }
+
+  if (!burstDone) {
+    burstDone = true;
+    window.GameConfetti?.burst();
   }
 
   const winner = players[0];
@@ -548,7 +479,6 @@ joinForm.addEventListener("submit", async (event) => {
     sessionStorage.setItem("conexao-game-player-id", playerId);
     sessionStorage.setItem("conexao-game-room", playerRoom);
     showStatus("");
-    window.GameAudio.playEffect("join");
     subscribeToRoom(roomCode);
   } catch (error) {
     joinError.textContent = error.message;
@@ -557,64 +487,8 @@ joinForm.addEventListener("submit", async (event) => {
   }
 });
 
-avatarFields.forEach((field) => {
-  field.addEventListener("change", () => {
-    renderAvatarPreview();
-    window.GameAudio.playEffect("select");
-  });
-});
+avatarFields.forEach((field) => field.addEventListener("change", renderAvatarPreview));
 renderAvatarPreview();
-
-audioToggle.addEventListener("click", async () => {
-  try {
-    const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
-    syncAudioUi();
-    if (enabled) {
-      syncMusicForStatus(currentGame?.status || "none");
-      window.GameAudio.playEffect("select");
-      showStatus("Som e trilha do jogo ativados.");
-    } else {
-      showStatus("Som do jogo desligado.");
-    }
-  } catch (error) {
-    showStatus(`Não foi possível ativar o som: ${error.message}`, true);
-  }
-});
-
-audioMixerBtn?.addEventListener("click", () => {
-  const isHidden = audioPopover.hidden;
-  audioPopover.hidden = !isHidden;
-  audioMixerBtn.setAttribute("aria-expanded", String(isHidden));
-});
-
-document.addEventListener("click", (event) => {
-  if (!audioPopover || audioPopover.hidden) return;
-  if (!event.target.closest(".audio-control-wrap")) {
-    audioPopover.hidden = true;
-    audioMixerBtn?.setAttribute("aria-expanded", "false");
-  }
-});
-
-musicSlider?.addEventListener("input", () => {
-  const pct = Number(musicSlider.value);
-  if (musicVal) musicVal.textContent = `${pct}%`;
-  window.GameAudio.setMusicVolume(pct / 100);
-});
-
-sfxSlider?.addEventListener("input", () => {
-  const pct = Number(sfxSlider.value);
-  if (sfxVal) sfxVal.textContent = `${pct}%`;
-  window.GameAudio.setSfxVolume(pct / 100);
-});
-
-audioTestBtn?.addEventListener("click", async () => {
-  if (!window.GameAudio.isEnabled()) {
-    await window.GameAudio.setEnabled(true);
-    syncAudioUi();
-    syncMusicForStatus(currentGame?.status || "none");
-  }
-  window.GameAudio.playEffect("correct");
-});
 
 gameContent.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-choice]");
@@ -632,7 +506,6 @@ gameContent.addEventListener("click", async (event) => {
 
   submitting = true;
   button.disabled = true;
-  window.GameAudio.playEffect("answer");
 
   try {
     const correct = choice === question.answer;
@@ -655,5 +528,4 @@ gameContent.addEventListener("click", async (event) => {
   }
 });
 
-initAudioControls();
 void resumeGame();
