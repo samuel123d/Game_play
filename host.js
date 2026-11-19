@@ -1,13 +1,13 @@
 import { db } from "./firebase-config.js";
 import { GAME_QUESTIONS } from "./questions.js";
 import {
-  ref,
-  get,
-  set,
-  update,
-  onValue,
-  off
-} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+  doc,
+  collection,
+  getDoc,
+  setDoc,
+  updateDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const gameContent = document.querySelector("#gameContent");
 const hostStatus = document.querySelector("#hostStatus");
@@ -18,8 +18,10 @@ const fullscreenToggle = document.querySelector("#fullscreenToggle");
 const QUESTION_DURATION_MS = 20000;
 
 let activeRoomCode = sessionStorage.getItem("conexao-host-room") || null;
-let roomRef = null;
+let unsubRoom = null;
+let unsubPlayers = null;
 let currentGame = null;
+let currentPlayers = [];
 let timerInterval = 0;
 let autoRevealLock = false;
 
@@ -37,72 +39,115 @@ function generateRoomCode() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
-function getSortedPlayers(playersMap) {
-  if (!playersMap || typeof playersMap !== "object") return [];
-  return Object.entries(playersMap)
-    .map(([id, data]) => ({
-      id,
-      name: data.name || "Participante",
-      score: Number(data.score || 0),
-      avatar: data.avatar || {},
-      answers: data.answers || {}
-    }))
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
+function cleanupListeners() {
+  if (unsubRoom) {
+    unsubRoom();
+    unsubRoom = null;
+  }
+  if (unsubPlayers) {
+    unsubPlayers();
+    unsubPlayers = null;
+  }
 }
 
 function subscribeToRoom(roomCode) {
-  if (roomRef) off(roomRef);
+  cleanupListeners();
   activeRoomCode = roomCode;
   sessionStorage.setItem("conexao-host-room", roomCode);
-  roomRef = ref(db, `rooms/${roomCode}`);
+  currentPlayers = [];
 
-  onValue(roomRef, (snapshot) => {
-    const data = snapshot.val();
-    if (!data || data.status === "closed") {
+  const roomDocRef = doc(db, "rooms", roomCode);
+  const playersColRef = collection(db, "rooms", roomCode, "players");
+
+  unsubRoom = onSnapshot(roomDocRef, (snapshot) => {
+    if (!snapshot.exists()) {
       currentGame = null;
       sessionStorage.removeItem("conexao-host-room");
       activeRoomCode = null;
+      cleanupListeners();
+      renderWelcomeScreen();
+      return;
+    }
+    const data = snapshot.data();
+    if (data.status === "closed") {
+      currentGame = null;
+      sessionStorage.removeItem("conexao-host-room");
+      activeRoomCode = null;
+      cleanupListeners();
       renderWelcomeScreen();
       return;
     }
     currentGame = data;
-    renderGame(data);
+    renderGame(currentGame, currentPlayers);
   }, (error) => {
-    hostStatus.textContent = `Erro no Firebase: ${error.message}`;
+    hostStatus.textContent = `Erro no Firestore: ${error.message}`;
+  });
+
+  unsubPlayers = onSnapshot(playersColRef, (snapshot) => {
+    currentPlayers = snapshot.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name || "Participante",
+          score: Number(data.score || 0),
+          avatar: data.avatar || {},
+          answers: data.answers || {}
+        };
+      })
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
+
+    if (currentGame && currentGame.status !== "closed") {
+      renderGame(currentGame, currentPlayers);
+    }
+  }, (error) => {
+    hostStatus.textContent = `Erro ao ler jogadores: ${error.message}`;
   });
 }
 
 async function openNewRoom() {
-  let code = generateRoomCode();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const existing = await get(ref(db, `rooms/${code}`));
-    const val = existing.val();
-    if (!val || val.status === "closed") break;
-    code = generateRoomCode();
-  }
+  const buttons = [
+    document.querySelector("#welcomeOpenRoom"),
+    document.querySelector("#barOpenRoom"),
+    document.querySelector("#btnRestart")
+  ].filter(Boolean);
 
-  autoRevealLock = false;
-  await set(ref(db, `rooms/${code}`), {
-    roomCode: code,
-    status: "lobby",
-    questionIndex: -1,
-    questionCount: GAME_QUESTIONS.length,
-    questionEndsAt: null,
-    createdAt: Date.now(),
-    players: {}
-  });
-  subscribeToRoom(code);
+  buttons.forEach((btn) => { btn.disabled = true; });
+  hostStatus.textContent = "Criando sala no Firestore...";
+
+  try {
+    let code = generateRoomCode();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const existing = await getDoc(doc(db, "rooms", code));
+      if (!existing.exists()) break;
+      code = generateRoomCode();
+    }
+
+    autoRevealLock = false;
+    await setDoc(doc(db, "rooms", code), {
+      roomCode: code,
+      status: "lobby",
+      questionIndex: -1,
+      questionCount: GAME_QUESTIONS.length,
+      questionEndsAt: null,
+      createdAt: Date.now()
+    });
+    subscribeToRoom(code);
+  } catch (error) {
+    console.error("Erro ao abrir sala:", error);
+    hostStatus.textContent = `Erro ao abrir sala: ${error.message}`;
+    buttons.forEach((btn) => { btn.disabled = false; });
+  }
 }
 
 async function startChallenge() {
   if (!activeRoomCode || !currentGame) return;
-  const players = getSortedPlayers(currentGame.players);
-  if (players.length === 0) {
+  if (currentPlayers.length === 0) {
     hostStatus.textContent = "Aguarde pelo menos 1 participante entrar pelo QR Code.";
     return;
   }
   autoRevealLock = false;
-  await update(ref(db, `rooms/${activeRoomCode}`), {
+  await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "question",
     questionIndex: 0,
     questionEndsAt: Date.now() + QUESTION_DURATION_MS
@@ -113,7 +158,7 @@ async function revealAnswer() {
   if (!activeRoomCode || !currentGame || currentGame.status !== "question") return;
   if (autoRevealLock) return;
   autoRevealLock = true;
-  await update(ref(db, `rooms/${activeRoomCode}`), {
+  await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "review",
     questionEndsAt: null
   });
@@ -123,14 +168,14 @@ async function nextQuestion() {
   if (!activeRoomCode || !currentGame || currentGame.status !== "review") return;
   const nextIndex = Number(currentGame.questionIndex) + 1;
   if (nextIndex >= GAME_QUESTIONS.length) {
-    await update(ref(db, `rooms/${activeRoomCode}`), {
+    await updateDoc(doc(db, "rooms", activeRoomCode), {
       status: "final",
       questionEndsAt: null
     });
     return;
   }
   autoRevealLock = false;
-  await update(ref(db, `rooms/${activeRoomCode}`), {
+  await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "question",
     questionIndex: nextIndex,
     questionEndsAt: Date.now() + QUESTION_DURATION_MS
@@ -139,17 +184,24 @@ async function nextQuestion() {
 
 async function closeRoom() {
   window.clearInterval(timerInterval);
-  if (activeRoomCode) {
-    await update(ref(db, `rooms/${activeRoomCode}`), {
-      status: "closed",
-      questionEndsAt: null
-    });
-  }
-  if (roomRef) off(roomRef);
-  roomRef = null;
+  const codeToClose = activeRoomCode;
+  cleanupListeners();
   activeRoomCode = null;
   currentGame = null;
+  currentPlayers = [];
   sessionStorage.removeItem("conexao-host-room");
+
+  if (codeToClose) {
+    try {
+      await updateDoc(doc(db, "rooms", codeToClose), {
+        status: "closed",
+        questionEndsAt: null
+      });
+    } catch {
+      // Ignora caso a sala já tenha sido encerrada
+    }
+  }
+
   void window.GameAudio.setEnabled(false);
   updateAudioButton();
   renderWelcomeScreen();
@@ -196,9 +248,8 @@ function renderStandings(players) {
   `;
 }
 
-function renderGame(game) {
+function renderGame(game, players) {
   window.clearInterval(timerInterval);
-  const players = getSortedPlayers(game.players);
   const joinUrl = `${window.location.origin}/play?room=${encodeURIComponent(game.roomCode)}`;
 
   if (game.status === "lobby") {
@@ -270,12 +321,13 @@ function renderGame(game) {
   }
 
   const qIndex = Number(game.questionIndex);
+  const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
 
   if ((game.status === "question" || game.status === "review") && question) {
     const isQuestion = game.status === "question";
     const isReview = game.status === "review";
-    const answeredCount = players.filter((p) => p.answers && p.answers[qIndex] !== undefined).length;
+    const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
 
     if (isQuestion && players.length > 0 && answeredCount >= players.length && !autoRevealLock) {
       void revealAnswer();

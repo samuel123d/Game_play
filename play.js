@@ -1,14 +1,14 @@
 import { db } from "./firebase-config.js";
 import { GAME_QUESTIONS } from "./questions.js";
 import {
-  ref,
-  get,
-  set,
-  push,
-  update,
-  onValue,
-  off
-} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+  doc,
+  collection,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const joinForm = document.querySelector("#playerJoinForm");
 const joinSection = document.querySelector("#playerJoin");
@@ -31,8 +31,10 @@ if (/^\d{5}$/.test(roomFromUrl)) roomCodeInput.value = roomFromUrl;
 let playerId = sessionStorage.getItem("conexao-game-player-id");
 let playerRoom = sessionStorage.getItem("conexao-game-room");
 let currentGame = null;
+let currentPlayers = [];
 let currentPlayer = null;
-let roomRef = null;
+let unsubRoom = null;
+let unsubPlayers = null;
 let timerInterval = 0;
 let submitting = false;
 let lastSoundKey = "";
@@ -65,19 +67,6 @@ function setConnected(connected) {
   connectionLabel.classList.toggle("is-connected", connected);
 }
 
-function getSortedPlayers(playersMap) {
-  if (!playersMap || typeof playersMap !== "object") return [];
-  return Object.entries(playersMap)
-    .map(([id, data]) => ({
-      id,
-      name: data.name || "Participante",
-      score: Number(data.score || 0),
-      avatar: data.avatar || {},
-      answers: data.answers || {}
-    }))
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
-}
-
 function renderRanking(players) {
   const topPlayers = (players || []).slice(0, 5);
   return `
@@ -97,39 +86,59 @@ function renderRanking(players) {
   `;
 }
 
+function cleanupListeners() {
+  if (unsubRoom) {
+    unsubRoom();
+    unsubRoom = null;
+  }
+  if (unsubPlayers) {
+    unsubPlayers();
+    unsubPlayers = null;
+  }
+}
+
 function clearSession() {
-  if (roomRef) off(roomRef);
-  roomRef = null;
+  cleanupListeners();
   sessionStorage.removeItem("conexao-game-player-id");
   sessionStorage.removeItem("conexao-game-room");
   playerId = null;
   playerRoom = null;
   currentGame = null;
+  currentPlayers = [];
   currentPlayer = null;
   setConnected(false);
 }
 
-function renderGame(game) {
+function exitToJoinScreen(message) {
+  gameSection.hidden = true;
+  joinSection.hidden = false;
+  void window.GameAudio.setEnabled(false);
+  audioToggle.setAttribute("aria-pressed", "false");
+  audioToggle.textContent = "♫ Som desligado";
+  showStatus(message);
+  clearSession();
+}
+
+function renderGame(game, players) {
   currentGame = game;
   window.clearInterval(timerInterval);
 
-  if (!game || game.status === "closed" || !game.players?.[playerId]) {
-    gameSection.hidden = true;
-    joinSection.hidden = false;
-    void window.GameAudio.setEnabled(false);
-    audioToggle.setAttribute("aria-pressed", "false");
-    audioToggle.textContent = "♫ Som desligado";
-    showStatus("A sala foi encerrada. Peça um novo código para entrar em outra partida.");
-    clearSession();
+  if (!game || game.status === "closed") {
+    exitToJoinScreen("A sala foi encerrada. Peça um novo código para entrar em outra partida.");
+    return;
+  }
+
+  const me = players.find((p) => p.id === playerId);
+  if (!me) {
     return;
   }
 
   setConnected(true);
-  const players = getSortedPlayers(game.players);
-  currentPlayer = game.players[playerId];
+  currentPlayer = me;
   const qIndex = Number(game.questionIndex);
+  const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
-  const roundAnswer = currentPlayer.answers?.[qIndex] || null;
+  const roundAnswer = currentPlayer.answers?.[qKey] || null;
 
   const soundKey = `${game.status}:${qIndex}`;
   if (soundKey && lastSoundKey && soundKey !== lastSoundKey) {
@@ -286,22 +295,55 @@ function renderGame(game) {
 }
 
 function subscribeToRoom(roomCode) {
-  if (roomRef) off(roomRef);
-  roomRef = ref(db, `rooms/${roomCode}`);
-  onValue(roomRef, (snapshot) => {
-    renderGame(snapshot.val());
+  cleanupListeners();
+  const roomDocRef = doc(db, "rooms", roomCode);
+  const playersColRef = collection(db, "rooms", roomCode, "players");
+
+  unsubRoom = onSnapshot(roomDocRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      exitToJoinScreen("Sala não encontrada ou encerrada.");
+      return;
+    }
+    currentGame = snapshot.data();
+    renderGame(currentGame, currentPlayers);
   }, (error) => {
     setConnected(false);
-    showStatus(`Erro de conexão com o Firebase: ${error.message}`, true);
+    showStatus(`Erro de conexão com o Firestore: ${error.message}`, true);
+  });
+
+  unsubPlayers = onSnapshot(playersColRef, (snapshot) => {
+    currentPlayers = snapshot.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name || "Participante",
+          score: Number(data.score || 0),
+          avatar: data.avatar || {},
+          answers: data.answers || {}
+        };
+      })
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
+
+    if (currentGame) {
+      renderGame(currentGame, currentPlayers);
+    }
+  }, (error) => {
+    setConnected(false);
+    showStatus(`Erro ao sincronizar jogadores: ${error.message}`, true);
   });
 }
 
 async function resumeGame() {
   if (!playerId || !playerRoom) return;
   try {
-    const snap = await get(ref(db, `rooms/${playerRoom}`));
-    const data = snap.val();
-    if (!data || data.status === "closed" || !data.players?.[playerId]) {
+    const roomSnap = await getDoc(doc(db, "rooms", playerRoom));
+    if (!roomSnap.exists() || roomSnap.data().status === "closed") {
+      clearSession();
+      return;
+    }
+    const playerSnap = await getDoc(doc(db, "rooms", playerRoom, "players", playerId));
+    if (!playerSnap.exists()) {
       clearSession();
       return;
     }
@@ -329,14 +371,14 @@ joinForm.addEventListener("submit", async (event) => {
       throw new Error("Escolha um apelido com pelo menos 2 caracteres.");
     }
 
-    const roomSnap = await get(ref(db, `rooms/${roomCode}`));
-    const roomData = roomSnap.val();
-
-    if (!roomData || roomData.status !== "lobby") {
+    const roomSnap = await getDoc(doc(db, "rooms", roomCode));
+    if (!roomSnap.exists() || roomSnap.data().status !== "lobby") {
       throw new Error("Sala não encontrada ou o jogo já foi iniciado. Confira o código na tela.");
     }
 
-    const existingPlayers = Object.values(roomData.players || {});
+    const playersSnap = await getDocs(collection(db, "rooms", roomCode, "players"));
+    const existingPlayers = playersSnap.docs.map((d) => d.data());
+
     if (existingPlayers.length >= 60) {
       throw new Error("Esta sala já atingiu o limite de 60 participantes.");
     }
@@ -348,16 +390,18 @@ joinForm.addEventListener("submit", async (event) => {
       throw new Error("Esse apelido já está na sala. Escolha outro.");
     }
 
-    const newPlayerRef = push(ref(db, `rooms/${roomCode}/players`));
-    playerId = newPlayerRef.key;
-    playerRoom = roomCode;
-
-    await set(newPlayerRef, {
+    const initialPlayer = {
       name,
       avatar,
       score: 0,
-      joinedAt: Date.now()
-    });
+      joinedAt: Date.now(),
+      answers: {}
+    };
+
+    const newPlayerRef = await addDoc(collection(db, "rooms", roomCode, "players"), initialPlayer);
+    playerId = newPlayerRef.id;
+    playerRoom = roomCode;
+    currentPlayers = [{ id: playerId, ...initialPlayer }];
 
     sessionStorage.setItem("conexao-game-player-id", playerId);
     sessionStorage.setItem("conexao-game-room", playerRoom);
@@ -389,9 +433,10 @@ gameContent.addEventListener("click", async (event) => {
   if (!button || submitting || !playerId || !playerRoom || !currentGame) return;
 
   const qIndex = Number(currentGame.questionIndex);
+  const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
   if (!question || currentGame.status !== "question") return;
-  if (currentPlayer?.answers?.[qIndex] !== undefined) return;
+  if (currentPlayer?.answers?.[qKey] !== undefined) return;
 
   const choice = Number(button.dataset.choice);
   const timeLeft = Math.max(0, (currentGame.questionEndsAt || Date.now()) - Date.now());
@@ -405,9 +450,9 @@ gameContent.addEventListener("click", async (event) => {
     const pointsEarned = correct ? 1000 + Math.round((500 * timeLeft) / 20000) : 0;
     const newScore = Number(currentPlayer.score || 0) + pointsEarned;
 
-    await update(ref(db, `rooms/${playerRoom}/players/${playerId}`), {
+    await updateDoc(doc(db, "rooms", playerRoom, "players", playerId), {
       score: newScore,
-      [`answers/${qIndex}`]: {
+      [`answers.${qKey}`]: {
         choice,
         correct,
         pointsEarned,
