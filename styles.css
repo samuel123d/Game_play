@@ -614,3 +614,131 @@ button {
     display: none;
   }
 }
+/* Estado visual do botão Ligar/Desligar Música */
+#audioToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+#audioToggle.is-on {
+  background: rgba(52, 211, 153, 0.16);
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #34d399;
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.22);
+}
+
+#audioToggle.is-off {
+  background: rgba(251, 113, 133, 0.12);
+  border-color: rgba(251, 113, 133, 0.38);
+  color: #fda4af;
+}
+
+/* Animações do Telão */
+.anim-screen-enter {
+  animation: hostScreenEnter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-stagger-item {
+  animation: hostItemSlide 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--stagger, 0) * 75ms);
+}
+
+.anim-chip-pop {
+  animation: hostChipPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.anim-podium-pop {
+  animation: hostPodiumPop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Destaque e animação da Rodada em Dobro (2x Pontos) */
+.game-question-screen.is-double-points {
+  position: relative;
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 42px rgba(251, 191, 36, 0.16), inset 0 0 36px rgba(251, 191, 36, 0.06);
+  animation: hostScreenEnter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both, doubleAuraPulse 2.2s ease-in-out infinite;
+}
+
+.double-points-banner {
+  position: relative;
+  overflow: hidden;
+  margin: 10px 0 14px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.65);
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.32), rgba(251, 191, 36, 0.2));
+  color: #fde68a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  animation: doubleBannerPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.double-points-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.28) 50%, transparent 75%);
+  transform: translateX(-100%);
+  animation: doubleBannerShine 2.6s ease-in-out infinite;
+}
+
+.double-points-spark {
+  font-size: 16px;
+  animation: sparkBounce 0.9s ease-in-out infinite alternate;
+}
+
+.double-points-sub {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fbbf24;
+  color: #090c15;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+@keyframes hostScreenEnter {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes hostItemSlide {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes hostChipPop {
+  from { opacity: 0; transform: scale(0.75); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes hostPodiumPop {
+  from { opacity: 0; transform: scale(0.82) translateY(16px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes doubleAuraPulse {
+  0%, 100% { box-shadow: 0 0 28px rgba(251, 191, 36, 0.14), inset 0 0 24px rgba(251, 191, 36, 0.05); }
+  50% { box-shadow: 0 0 54px rgba(251, 191, 36, 0.32), inset 0 0 42px rgba(251, 191, 36, 0.12); }
+}
+
+@keyframes doubleBannerPop {
+  from { opacity: 0; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes doubleBannerShine {
+  0%, 35% { transform: translateX(-100%); }
+  75%, 100% { transform: translateX(100%); }
+}
+
+@keyframes sparkBounce {
+  from { transform: scale(1) rotate(-6deg); }
+  to { transform: scale(1.25) rotate(8deg); }
+}

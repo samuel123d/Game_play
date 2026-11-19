@@ -64,6 +64,12 @@ function escapeHTML(value) {
   })[character]);
 }
 
+function isDoublePointsQuestion(qIndex, question) {
+  if (!question || qIndex < 0) return false;
+  if (typeof question.doublePoints === "boolean") return question.doublePoints;
+  return GAME_QUESTIONS.length > 1 && qIndex === GAME_QUESTIONS.length - 1;
+}
+
 function getCorrectAnswerIndex(question) {
   if (!question) return -1;
   const raw = question.answer ?? question.correctIndex ?? question.correct ?? question.rightAnswer;
@@ -85,7 +91,6 @@ function getRemainingMs(game) {
   if (remoteRemaining > 0) {
     return Math.min(QUESTION_DURATION_MS, remoteRemaining);
   }
-  // Fallback seguro caso o relógio do celular esteja adiantado em relação ao telão
   if (trackedQuestionStartLocal > 0) {
     return Math.max(0, QUESTION_DURATION_MS - (Date.now() - trackedQuestionStartLocal));
   }
@@ -111,7 +116,7 @@ function renderRanking(players) {
         ${topPlayers.map((player, index) => {
           const isMe = player.id === playerId;
           return `
-            <li class="${isMe ? "is-me" : ""}">
+            <li class="${isMe ? "is-me" : ""}" style="--stagger:${index}">
               <span>${String(index + 1).padStart(2, "0")}</span>
               ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
               <b>
@@ -182,6 +187,7 @@ function renderGame(game, players) {
   const qIndex = Number(game.questionIndex);
   const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
+  const isDouble = isDoublePointsQuestion(qIndex, question);
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
 
   if (game.status === "question") {
@@ -244,9 +250,14 @@ function renderGame(game, players) {
     const isLocked = lastChoice !== null || submitting;
 
     gameContent.innerHTML = `
-      <article class="player-card">
+      <article class="player-card${isDouble ? " is-double-points" : ""}">
         ${header}
         ${identity}
+        ${isDouble ? `
+          <div class="player-double-banner">
+            <span>⚡ RODADA EM DOBRO · 2X PONTOS</span>
+          </div>
+        ` : ""}
         <div class="player-card-header">
           <span>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</span>
           <span class="player-seconds-badge${isUrgent ? " is-urgent" : ""}" id="playerSeconds">${secs}s</span>
@@ -262,6 +273,7 @@ function renderGame(game, players) {
                 class="player-answer${isSelected ? " is-selected" : ""}${isDimmed ? " is-dimmed" : ""}"
                 type="button"
                 data-choice="${index}"
+                style="--stagger:${index}"
                 ${isLocked ? "disabled" : ""}
               >
                 <span class="player-answer-letter">${["A", "B", "C"][index]}</span>
@@ -276,7 +288,9 @@ function renderGame(game, players) {
             ? "Resposta registrada! Aguarde a revelação no telão."
             : pendingChoice !== null
               ? "Registrando sua resposta..."
-              : "Toque em uma alternativa antes do tempo acabar."}
+              : isDouble
+                ? "⚡ Valendo o dobro de pontos! Responda rápido."
+                : "Toque em uma alternativa antes do tempo acabar."}
         </p>
       </article>
     `;
@@ -309,16 +323,17 @@ function renderGame(game, players) {
 
   if (game.status === "review" && question) {
     const correctIndex = getCorrectAnswerIndex(question);
+    const multiplier = isDouble ? 2 : 1;
     let bannerClass = "is-timeout";
     let bannerText = "⏱ Tempo esgotado nesta rodada";
     let bannerPts = "0 PTS";
 
     if (lastChoice !== null && roundAnswer) {
       const wasCorrect = Boolean(roundAnswer.correct) || lastChoice === correctIndex;
-      const earned = Number(roundAnswer.pointsEarned || (wasCorrect ? BASE_POINTS : 0));
+      const earned = Number(roundAnswer.pointsEarned || (wasCorrect ? BASE_POINTS * multiplier : 0));
       if (wasCorrect) {
         bannerClass = "is-correct";
-        bannerText = "✓ Resposta correta!";
+        bannerText = isDouble ? "⚡ Resposta correta (2X)!" : "✓ Resposta correta!";
         bannerPts = `+${earned.toLocaleString("pt-BR")} PTS`;
       } else {
         bannerClass = "is-incorrect";
@@ -328,7 +343,7 @@ function renderGame(game, players) {
     }
 
     gameContent.innerHTML = `
-      <article class="player-card">
+      <article class="player-card${isDouble ? " is-double-points" : ""}">
         ${header}
         ${identity}
         <div class="round-result-banner ${bannerClass}">
@@ -347,7 +362,7 @@ function renderGame(game, players) {
                 ? `<span class="player-answer-tag">SUA RESPOSTA</span>`
                 : "";
             return `
-              <div class="player-answer${stateClass}">
+              <div class="player-answer${stateClass}" style="--stagger:${index}">
                 <span class="player-answer-letter">${["A", "B", "C"][index]}</span>
                 <span class="player-answer-text">${escapeHTML(choice)}</span>
                 ${tag}
@@ -556,6 +571,7 @@ gameContent.addEventListener("click", async (event) => {
 
   const choice = Number(button.dataset.choice);
   const timeLeft = getRemainingMs(currentGame);
+  const multiplier = isDoublePointsQuestion(qIndex, question) ? 2 : 1;
 
   submitting = true;
   pendingChoice = choice;
@@ -565,12 +581,13 @@ gameContent.addEventListener("click", async (event) => {
     const correctIndex = getCorrectAnswerIndex(question);
     const correct = choice === correctIndex;
     const speedBonus = Math.round((SPEED_BONUS_MAX * timeLeft) / QUESTION_DURATION_MS);
-    const pointsEarned = correct ? BASE_POINTS + speedBonus : 0;
+    const pointsEarned = correct ? (BASE_POINTS + speedBonus) * multiplier : 0;
 
     const answerPayload = {
       choice,
       correct,
       pointsEarned,
+      doublePoints: multiplier === 2,
       answeredAt: Date.now()
     };
 

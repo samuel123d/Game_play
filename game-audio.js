@@ -39,6 +39,13 @@
       type: "sine",
       notes: [220.0, 220.0, 261.63, 329.63, 293.66, 293.66, 261.63, 246.94]
     },
+    doublePoints: {
+      tempoMs: 195,
+      type: "sawtooth",
+      bassType: "triangle",
+      notes: [293.66, 349.23, 440.0, 523.25, 587.33, 523.25, 440.0, 392.0],
+      bassNotes: [146.83, 146.83, 174.61, 174.61, 220.0, 220.0, 196.0, 196.0]
+    },
     review: {
       tempoMs: 480,
       type: "sine",
@@ -121,9 +128,16 @@
         stopLoop();
         return;
       }
-      const freq = track.notes[stepIndex % track.notes.length];
+      const idx = stepIndex % track.notes.length;
+      const freq = track.notes[idx];
+      const leadGain = track.type === "sawtooth" ? 0.09 : 0.16;
+      playTone(freq, (track.tempoMs / 1000) * 0.85, track.type, musicGain, leadGain, 0);
+
+      if (track.bassNotes) {
+        const bassFreq = track.bassNotes[idx % track.bassNotes.length];
+        playTone(bassFreq, (track.tempoMs / 1000) * 0.9, track.bassType || "triangle", musicGain, 0.18, 0);
+      }
       stepIndex += 1;
-      playTone(freq, (track.tempoMs / 1000) * 0.85, track.type, musicGain, 0.16, 0);
     };
 
     tickStep();
@@ -164,7 +178,7 @@
           try {
             await audioCtx.resume();
           } catch {
-            // Continua mesmo se o navegador resolver no próximo tick
+            // Continua
           }
         }
         if (musicGain) musicGain.gain.value = prefs.musicVolume;
@@ -230,6 +244,11 @@
         playTone(659.25, 0.12, "triangle", sfxGain, 0.3, 0.1);
         playTone(783.99, 0.12, "triangle", sfxGain, 0.3, 0.2);
         playTone(1046.5, 0.26, "triangle", sfxGain, 0.32, 0.3);
+      } else if (name === "doublePointsStart") {
+        const notes = [440.0, 554.37, 659.25, 880.0, 1108.73, 1318.51];
+        notes.forEach((n, idx) => {
+          playTone(n, idx === notes.length - 1 ? 0.38 : 0.11, "triangle", sfxGain, 0.34, idx * 0.075);
+        });
       } else if (name === "tick") {
         playTone(880.0, 0.06, "sine", sfxGain, 0.18, 0);
       } else if (name === "urgentTick") {

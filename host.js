@@ -15,8 +15,6 @@ const hostActions = document.querySelector("#hostActions");
 const fullscreenToggle = document.querySelector("#fullscreenToggle");
 
 const audioToggle = document.querySelector("#audioToggle, #soundToggle, [data-audio-toggle]");
-const audioToggleLabel = document.querySelector("#audioToggleLabel");
-const audioWavePath = document.querySelector("#audioWavePath");
 const audioMixerBtn = document.querySelector("#audioMixerBtn");
 const audioPopover = document.querySelector("#audioPopover");
 const audioTestBtn = document.querySelector("#audioTestBtn");
@@ -55,6 +53,12 @@ function generateRoomCode() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
+function isDoublePointsQuestion(qIndex, question) {
+  if (!question || qIndex < 0) return false;
+  if (typeof question.doublePoints === "boolean") return question.doublePoints;
+  return GAME_QUESTIONS.length > 1 && qIndex === GAME_QUESTIONS.length - 1;
+}
+
 function getCorrectAnswerIndex(question) {
   if (!question) return -1;
   const raw = question.answer ?? question.correctIndex ?? question.correct ?? question.rightAnswer;
@@ -71,28 +75,50 @@ function getCorrectAnswerIndex(question) {
   return -1;
 }
 
-function syncMusicForStatus(status) {
+function syncMusicForStatus(status, qIndex = -1) {
   if (!window.GameAudio) return;
   if (!window.GameAudio.isEnabled()) {
     window.GameAudio.setTrack("none");
     return;
   }
-  if (status === "question") window.GameAudio.setTrack("question");
-  else if (status === "review") window.GameAudio.setTrack("review");
-  else if (status === "final") window.GameAudio.setTrack("victory");
-  else window.GameAudio.setTrack("lobby");
+  if (status === "question") {
+    const isDouble = isDoublePointsQuestion(qIndex, GAME_QUESTIONS[qIndex]);
+    window.GameAudio.setTrack(isDouble ? "doublePoints" : "question");
+  } else if (status === "review") {
+    window.GameAudio.setTrack("review");
+  } else if (status === "final") {
+    window.GameAudio.setTrack("victory");
+  } else {
+    window.GameAudio.setTrack("lobby");
+  }
 }
 
 function updateAudioButton() {
   if (!window.GameAudio || !audioToggle) return;
   const enabled = window.GameAudio.isEnabled();
+
   audioToggle.setAttribute("aria-pressed", String(enabled));
-  if (audioToggleLabel) {
-    audioToggleLabel.textContent = enabled ? "Som ligado" : "Som desligado";
-  }
-  if (audioWavePath) {
-    audioWavePath.style.opacity = enabled ? "1" : "0.28";
-  }
+  audioToggle.classList.toggle("is-on", enabled);
+  audioToggle.classList.toggle("is-off", !enabled);
+
+  // Atualiza texto e ícone diretamente para o estado mudar visivelmente
+  audioToggle.innerHTML = enabled
+    ? `
+      <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"></polygon>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+      </svg>
+      <span id="audioToggleLabel">Música ligada</span>
+    `
+    : `
+      <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="23" y1="9" x2="17" y2="15"></line>
+        <line x1="17" y1="9" x2="23" y2="15"></line>
+      </svg>
+      <span id="audioToggleLabel">Música desligada</span>
+    `;
 }
 
 function initAudioControls() {
@@ -109,7 +135,7 @@ function initAudioControls() {
     sfxVolumeValue.textContent = `${pct}%`;
   }
   updateAudioButton();
-  syncMusicForStatus(currentGame?.status || "welcome");
+  syncMusicForStatus(currentGame?.status || "welcome", Number(currentGame?.questionIndex ?? -1));
 }
 
 function cleanupListeners() {
@@ -292,7 +318,7 @@ function renderWelcomeScreen() {
   window.clearInterval(timerInterval);
   syncMusicForStatus("welcome");
   gameContent.innerHTML = `
-    <div class="game-screen game-welcome-screen">
+    <div class="game-screen game-welcome-screen anim-screen-enter">
       <p class="eyebrow">ATIVIDADE INTERATIVA EM TEMPO REAL</p>
       <h1>Desafio<br /><span class="accent">Relâmpago.</span></h1>
       <p class="welcome-copy">
@@ -319,7 +345,7 @@ function renderStandings(players) {
   return `
     <ol class="game-standings">
       ${top.map((player, idx) => `
-        <li>
+        <li class="anim-stagger-item" style="--stagger:${idx}">
           <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
           ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
           <b>${escapeHTML(player.name)}</b>
@@ -334,14 +360,20 @@ function renderGame(game, players) {
   window.clearInterval(timerInterval);
   const joinUrl = `${window.location.origin}/play?room=${encodeURIComponent(game.roomCode)}`;
   const qIndex = Number(game.questionIndex);
+  const question = GAME_QUESTIONS[qIndex];
+  const isDouble = isDoublePointsQuestion(qIndex, question);
 
-  syncMusicForStatus(game.status);
+  syncMusicForStatus(game.status, qIndex);
   const stateSoundKey = `${game.status}:${qIndex}`;
   if (stateSoundKey !== lastStateSoundKey) {
     if (lastStateSoundKey) {
       if (game.status === "question") {
         lastUrgentSecond = -1;
-        window.GameAudio?.playEffect(qIndex === 0 ? "start" : "tick");
+        if (isDouble) {
+          window.GameAudio?.playEffect("doublePointsStart");
+        } else {
+          window.GameAudio?.playEffect(qIndex === 0 ? "start" : "tick");
+        }
       } else if (game.status === "review") {
         window.GameAudio?.playEffect("correct");
       } else if (game.status === "final") {
@@ -363,7 +395,7 @@ function renderGame(game, players) {
     }
 
     gameContent.innerHTML = `
-      <div class="game-screen game-lobby-screen">
+      <div class="game-screen game-lobby-screen anim-screen-enter">
         <header class="game-screen-heading">
           <span>CONEXÃO · DESAFIO RELÂMPAGO</span>
           <strong>CADASTRO SEGURO</strong>
@@ -388,7 +420,7 @@ function renderGame(game, players) {
         <div class="game-player-list">
           ${players.length
             ? players.map((p) => `
-                <span class="game-player-chip">
+                <span class="game-player-chip anim-chip-pop">
                   ${window.GameAvatar.render(p.avatar, "game-avatar game-avatar-chip")}
                   <span>${escapeHTML(p.name)}</span>
                 </span>
@@ -423,7 +455,6 @@ function renderGame(game, players) {
   }
 
   const qKey = String(qIndex);
-  const question = GAME_QUESTIONS[qIndex];
 
   if ((game.status === "question" || game.status === "review") && question) {
     const isQuestion = game.status === "question";
@@ -447,11 +478,18 @@ function renderGame(game, players) {
     }
 
     gameContent.innerHTML = `
-      <div class="game-screen game-question-screen">
+      <div class="game-screen game-question-screen anim-screen-enter${isDouble ? " is-double-points" : ""}">
         <header class="game-screen-heading">
           <span>DESAFIO RELÂMPAGO · SALA ${escapeHTML(game.roomCode)}</span>
           <strong>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</strong>
         </header>
+        ${isDouble ? `
+          <div class="double-points-banner" role="status">
+            <span class="double-points-spark">⚡</span>
+            <strong>RODADA EM DOBRO · 2X PONTOS</strong>
+            <span class="double-points-sub">VALE ATÉ 3.000 PTS!</span>
+          </div>
+        ` : ""}
         <div class="game-question-meta">
           <span>${players.length} PARTICIPANTES</span>
           <span>${answeredCount} RESPONDERAM</span>
@@ -463,14 +501,14 @@ function renderGame(game, players) {
         }
         <div class="game-projector-answers">
           ${question.choices.map((choice, idx) => `
-            <div class="game-projector-answer${isReview && idx === correctIndex ? " is-correct" : ""}${isReview && idx !== correctIndex ? " is-dimmed" : ""}">
+            <div class="game-projector-answer anim-stagger-item${isReview && idx === correctIndex ? " is-correct" : ""}${isReview && idx !== correctIndex ? " is-dimmed" : ""}" style="--stagger:${idx}">
               <span>${["A", "B", "C"][idx]}</span>
               <div>${escapeHTML(choice)}</div>
             </div>
           `).join("")}
         </div>
         ${isReview ? `
-          <div class="game-explanation-box">
+          <div class="game-explanation-box anim-screen-enter">
             <b>POR QUE ESTA É A MAIS SEGURA?</b>
             <span>${escapeHTML(question.explanation)}</span>
           </div>
@@ -516,7 +554,7 @@ function renderGame(game, players) {
     }
 
     hostStatus.textContent = isQuestion
-      ? `Pergunta ${qIndex + 1} de ${GAME_QUESTIONS.length} · ${answeredCount}/${players.length} responderam`
+      ? `${isDouble ? "⚡ 2X PONTOS · " : ""}Pergunta ${qIndex + 1} de ${GAME_QUESTIONS.length} · ${answeredCount}/${players.length} responderam`
       : `Resposta revelada · Pergunta ${qIndex + 1} de ${GAME_QUESTIONS.length}`;
 
     hostActions.innerHTML = isQuestion
@@ -546,12 +584,12 @@ function renderGame(game, players) {
       : winner.name;
 
   gameContent.innerHTML = `
-    <div class="game-screen game-final-screen">
+    <div class="game-screen game-final-screen anim-screen-enter">
       <header class="game-screen-heading">
         <span>DESAFIO RELÂMPAGO · RESULTADO FINAL</span>
         <strong>PARABÉNS!</strong>
       </header>
-      <div class="game-podium-hero">
+      <div class="game-podium-hero anim-podium-pop">
         ${winner ? window.GameAvatar.render(winner.avatar, "game-avatar game-avatar-projector-winner") : ""}
         <div class="game-winner-crown">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DO DESAFIO"}</div>
         <h2>${escapeHTML(winnerTitle)}</h2>
@@ -583,7 +621,7 @@ audioToggle?.addEventListener("click", async () => {
     const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
     updateAudioButton();
     if (enabled) {
-      syncMusicForStatus(currentGame?.status || "welcome");
+      syncMusicForStatus(currentGame?.status || "welcome", Number(currentGame?.questionIndex ?? -1));
       window.GameAudio.playEffect("start");
     } else {
       window.GameAudio.setTrack("none");
@@ -625,9 +663,9 @@ audioTestBtn?.addEventListener("click", async () => {
   if (!window.GameAudio.isEnabled()) {
     await window.GameAudio.setEnabled(true);
     updateAudioButton();
-    syncMusicForStatus(currentGame?.status || "welcome");
+    syncMusicForStatus(currentGame?.status || "welcome", Number(currentGame?.questionIndex ?? -1));
   }
-  window.GameAudio.playEffect("correct");
+  window.GameAudio.playEffect("doublePointsStart");
 });
 
 fullscreenToggle?.addEventListener("click", () => {
