@@ -215,6 +215,23 @@ function getQuestionDurationMs(game) {
   return Number.isFinite(val) && val > 0 ? val : QUESTION_DURATION_MS;
 }
 
+function formatSecondsPt(ms) {
+  const seconds = Math.max(0.1, ms / 1000);
+  return `${seconds.toFixed(1).replace(".", ",")}s`;
+}
+
+function getAnswerResponseTimeMs(ans, durationMs) {
+  if (!ans) return null;
+  if (typeof ans.responseTimeMs === "number" && Number.isFinite(ans.responseTimeMs)) {
+    return Math.max(100, Math.min(durationMs, ans.responseTimeMs));
+  }
+  if (ans.correct && typeof ans.speedBonus === "number" && SPEED_BONUS_MAX > 0) {
+    const inferred = Math.round(durationMs * (1 - ans.speedBonus / SPEED_BONUS_MAX));
+    return Math.max(100, Math.min(durationMs, inferred));
+  }
+  return null;
+}
+
 function syncQuestionClock(game) {
   const durationMs = getQuestionDurationMs(game);
   const serverEndsAt = Number(game?.questionEndsAt) || 0;
@@ -269,6 +286,681 @@ function setConnected(connected) {
   connectionLabel.classList.toggle("is-connected", connected);
 }
 
+function renderQuestionHistoryGrid(answers, durationMs, maxQuestionsCount = GAME_QUESTIONS.length) {
+  const total = Math.max(1, Math.min(GAME_QUESTIONS.length, maxQuestionsCount));
+  const items = [];
+
+  for (let idx = 0; idx < total; idx++) {
+    const q = GAME_QUESTIONS[idx];
+    const ans = answers?.[String(idx)] || null;
+    const correctIndex = getCorrectAnswerIndex(q);
+    const isDouble = isDoublePointsQuestion(idx, q);
+
+    let statusClass = "is-timeout";
+    let statusIcon = "⏱";
+    let statusLabelText = "Esgotado";
+    let timeText = `${Math.round(durationMs / 1000)}s`;
+
+    if (ans) {
+      const isRight = Boolean(ans.correct) || Number(ans.choice) === correctIndex;
+      const respMs = getAnswerResponseTimeMs(ans, durationMs);
+      timeText = respMs !== null ? formatSecondsPt(respMs) : "Respondida";
+
+      if (isRight) {
+        statusClass = "is-correct";
+        statusIcon = "✓";
+        statusLabelText = "Acertou";
+      } else {
+        statusClass = "is-incorrect";
+        statusIcon = "✕";
+        statusLabelText = "Errou";
+      }
+    }
+
+    items.push(`
+      <button
+        type="button"
+        class="question-history-tile ${statusClass}"
+        data-open-review="${idx}"
+        title="Ver detalhes da pergunta ${idx + 1}"
+      >
+        <span class="q-tile-top">
+          <b>${String(idx + 1).padStart(2, "0")}</b>
+          ${isDouble ? `<em class="q-tile-2x">2X</em>` : ""}
+        </span>
+        <span class="q-tile-icon" aria-hidden="true">${statusIcon}</span>
+        <span class="q-tile-status">${statusLabelText}</span>
+        <span class="q-tile-time">⏱ ${timeText}</span>
+      </button>
+    `);
+  }
+
+  return `
+    <section class="player-history-section" aria-label="Resumo das suas respostas">
+      <div class="player-history-head">
+        <span>SUAS QUESTÕES</span>
+        <small>TOQUE PARA ABRIR NO CARROSSEL</small>
+      </div>
+      <div class="question-history-grid">
+        ${items.join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildReviewCarouselSrcdoc(answers, startIndex, durationMs, maxQuestionsCount = GAME_QUESTIONS.length) {
+  const total = Math.max(1, Math.min(GAME_QUESTIONS.length, maxQuestionsCount));
+  const safeStart = Math.max(0, Math.min(total - 1, Number(startIndex) || 0));
+  const totalSecLabel = `${Math.round(durationMs / 1000)}s`;
+
+  const slidesHTML = [];
+  const dotsHTML = [];
+
+  for (let idx = 0; idx < total; idx++) {
+    const q = GAME_QUESTIONS[idx];
+    const ans = answers?.[String(idx)] || null;
+    const correctIndex = getCorrectAnswerIndex(q);
+    const isDouble = isDoublePointsQuestion(idx, q);
+    const multiplier = isDouble ? 2 : 1;
+
+    let statusClass = "is-timeout";
+    let statusBadge = "⏱ TEMPO ESGOTADO";
+    let timeDisplay = `${totalSecLabel} (não respondeu)`;
+    let speedTag = "Sem resposta";
+    let speedPct = 0;
+    let pointsDisplay = "0 pts";
+    let userChoice = null;
+
+    if (ans) {
+      userChoice = Number(ans.choice);
+      const isRight = Boolean(ans.correct) || userChoice === correctIndex;
+      const respMs = getAnswerResponseTimeMs(ans, durationMs);
+      const earned = Number(ans.pointsEarned || 0);
+      pointsDisplay = `+${earned.toLocaleString("pt-BR")} pts`;
+
+      if (respMs !== null) {
+        timeDisplay = `${formatSecondsPt(respMs)} de ${totalSecLabel}`;
+        speedPct = Math.max(6, Math.min(100, Math.round((respMs / durationMs) * 100)));
+        if (respMs <= durationMs * 0.25) {
+          speedTag = "⚡ Relâmpago";
+        } else if (respMs <= durationMs * 0.55) {
+          speedTag = "🚀 Muito rápido";
+        } else {
+          speedTag = "✓ Dentro do tempo";
+        }
+      } else {
+        timeDisplay = "Respondida";
+        speedTag = "Registrada";
+        speedPct = 50;
+      }
+
+      if (isRight) {
+        statusClass = "is-correct";
+        statusBadge = isDouble ? "✓ VOCÊ ACERTOU · 2X" : "✓ VOCÊ ACERTOU";
+      } else {
+        statusClass = "is-incorrect";
+        statusBadge = "✕ VOCÊ ERROU";
+        pointsDisplay = "0 pts";
+      }
+    }
+
+    dotsHTML.push(`
+      <button type="button" class="dot-btn ${statusClass}${idx === safeStart ? " is-active" : ""}" data-slide="${idx}">
+        ${String(idx + 1).padStart(2, "0")}
+      </button>
+    `);
+
+    const choicesHTML = (q.choices || []).map((choice, cIdx) => {
+      const isCorrectOpt = cIdx === correctIndex;
+      const isUserPick = userChoice === cIdx;
+      const isWrongPick = isUserPick && !isCorrectOpt;
+      const optClass = isCorrectOpt ? "is-correct" : isWrongPick ? "is-incorrect" : "is-neutral";
+
+      let tagHTML = "";
+      if (isCorrectOpt && isUserPick) {
+        tagHTML = `<span class="opt-tag is-right">SUA RESPOSTA · CORRETA</span>`;
+      } else if (isCorrectOpt) {
+        tagHTML = `<span class="opt-tag is-right">CORRETA</span>`;
+      } else if (isWrongPick) {
+        tagHTML = `<span class="opt-tag is-wrong">SUA RESPOSTA</span>`;
+      }
+
+      return `
+        <div class="choice-item ${optClass}">
+          <span class="choice-letter">${["A", "B", "C", "D"][cIdx] || cIdx + 1}</span>
+          <span class="choice-text">${escapeHTML(choice)}</span>
+          ${tagHTML}
+        </div>
+      `;
+    }).join("");
+
+    const streakVal = Number(ans?.streak || 0);
+    const speedPts = Number(ans?.speedBonus || 0) * multiplier;
+    const streakPts = Number(ans?.streakBonus || 0) * multiplier;
+
+    slidesHTML.push(`
+      <section class="carousel-slide" aria-label="Pergunta ${idx + 1} de ${total}">
+        <div class="slide-inner">
+          <div class="slide-meta">
+            <span>PERGUNTA ${String(idx + 1).padStart(2, "0")} DE ${String(total).padStart(2, "0")}</span>
+            ${isDouble ? `<span class="double-pill">⚡ 2X PONTOS</span>` : ""}
+          </div>
+
+          <div class="result-banner ${statusClass}">
+            <strong>${statusBadge}</strong>
+            <span>${pointsDisplay}</span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="metric-label">⏱ TEMPO DA QUESTÃO</span>
+              <strong class="metric-value">${timeDisplay}</strong>
+              <div class="time-bar-track"><i style="width:${speedPct}%"></i></div>
+              <small class="metric-sub">${speedTag}</small>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">🏆 PONTUAÇÃO</span>
+              <strong class="metric-value">${pointsDisplay}</strong>
+              <small class="metric-sub">
+                ${ans?.correct
+                  ? `Rapidez: +${speedPts.toLocaleString("pt-BR")}${streakPts > 0 ? ` · 🔥${streakVal}x: +${streakPts.toLocaleString("pt-BR")}` : ""}`
+                  : "Sem pontos nesta rodada"}
+              </small>
+            </div>
+          </div>
+
+          <h2 class="question-title">${escapeHTML(q.prompt)}</h2>
+
+          <div class="choices-list">
+            ${choicesHTML}
+          </div>
+
+          <div class="explanation-card">
+            <b>POR QUE ESTA É A MAIS SEGURA?</b>
+            <p>${escapeHTML(q.explanation)}</p>
+          </div>
+        </div>
+      </section>
+    `);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #090d1f;
+      color: #f5f6ff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .top-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #101633;
+      border-bottom: 1px solid rgba(165, 176, 255, 0.16);
+    }
+    .top-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .top-title span {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: #66f4ff;
+    }
+    .top-title strong {
+      font-size: 14px;
+      color: #ffffff;
+    }
+    .close-btn {
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(251, 113, 133, 0.45);
+      background: rgba(251, 113, 133, 0.14);
+      color: #fda4af;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .dots-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      overflow-x: auto;
+      background: rgba(13, 18, 40, 0.9);
+      border-bottom: 1px solid rgba(165, 176, 255, 0.1);
+    }
+    .dot-btn {
+      flex: none;
+      min-width: 32px;
+      height: 28px;
+      padding: 0 7px;
+      border-radius: 8px;
+      border: 1px solid rgba(165, 176, 255, 0.22);
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .dot-btn.is-correct {
+      border-color: rgba(52, 211, 153, 0.45);
+      color: #6ee7b7;
+      background: rgba(52, 211, 153, 0.12);
+    }
+    .dot-btn.is-incorrect {
+      border-color: rgba(251, 113, 133, 0.45);
+      color: #fda4af;
+      background: rgba(251, 113, 133, 0.12);
+    }
+    .dot-btn.is-active {
+      transform: scale(1.08);
+      border-width: 2px;
+      border-color: #66f4ff;
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(102, 244, 255, 0.35);
+    }
+    .carousel-viewport {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    .carousel-track {
+      display: flex;
+      height: 100%;
+      transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+    .carousel-slide {
+      flex: 0 0 100%;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .slide-inner {
+      max-width: 560px;
+      margin: 0 auto;
+      display: grid;
+      gap: 12px;
+    }
+    .slide-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #94a3b8;
+    }
+    .double-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(251, 191, 36, 0.18);
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      color: #fde047;
+    }
+    .result-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .result-banner.is-correct {
+      background: rgba(52, 211, 153, 0.15);
+      border: 1px solid rgba(52, 211, 153, 0.5);
+      color: #6ee7b7;
+    }
+    .result-banner.is-incorrect {
+      background: rgba(251, 113, 133, 0.15);
+      border: 1px solid rgba(251, 113, 133, 0.5);
+      color: #fda4af;
+    }
+    .result-banner.is-timeout {
+      background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: #cbd5e1;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .metric-card {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #121836;
+      border: 1px solid rgba(165, 176, 255, 0.16);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+    }
+    .metric-value {
+      font-size: 15px;
+      color: #ffffff;
+    }
+    .metric-sub {
+      font-size: 11px;
+      color: #66f4ff;
+    }
+    .time-bar-track {
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+      margin: 2px 0;
+    }
+    .time-bar-track i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #34d399, #66f4ff);
+    }
+    .question-title {
+      margin: 4px 0;
+      font-size: 17px;
+      line-height: 1.4;
+      color: #ffffff;
+    }
+    .choices-list {
+      display: grid;
+      gap: 8px;
+    }
+    .choice-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(165, 176, 255, 0.16);
+      background: #131a3a;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .choice-item.is-neutral {
+      opacity: 0.55;
+    }
+    .choice-item.is-correct {
+      border-color: #34d399;
+      background: rgba(52, 211, 153, 0.14);
+      color: #ecfdf5;
+    }
+    .choice-item.is-incorrect {
+      border-color: #fb7185;
+      background: rgba(251, 113, 133, 0.14);
+      color: #fff1f2;
+    }
+    .choice-letter {
+      width: 26px;
+      height: 26px;
+      flex: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .choice-item.is-correct .choice-letter {
+      background: #34d399;
+      color: #06281e;
+    }
+    .choice-item.is-incorrect .choice-letter {
+      background: #fb7185;
+      color: #2b0711;
+    }
+    .choice-text {
+      flex: 1;
+    }
+    .opt-tag {
+      flex: none;
+      padding: 3px 7px;
+      border-radius: 6px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+    .opt-tag.is-right {
+      background: rgba(52, 211, 153, 0.22);
+      color: #6ee7b7;
+    }
+    .opt-tag.is-wrong {
+      background: rgba(251, 113, 133, 0.24);
+      color: #fda4af;
+    }
+    .explanation-card {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(102, 244, 255, 0.25);
+      background: rgba(102, 244, 255, 0.07);
+      font-size: 13px;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+    .explanation-card b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: #66f4ff;
+    }
+    .explanation-card p {
+      margin: 0;
+    }
+    .nav-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #101633;
+      border-top: 1px solid rgba(165, 176, 255, 0.16);
+    }
+    .nav-btn {
+      height: 40px;
+      padding: 0 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(102, 244, 255, 0.35);
+      background: rgba(102, 244, 255, 0.12);
+      color: #66f4ff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .swipe-hint {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    @media (max-width: 420px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+      .swipe-hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="top-title">
+        <span>CARROSSEL DE REVISÃO</span>
+        <strong id="counterLabel">Questão ${String(safeStart + 1).padStart(2, "0")} de ${String(total).padStart(2, "0")}</strong>
+      </div>
+      <button type="button" class="close-btn" id="closeBtn">Fechar ✕</button>
+    </header>
+
+    <nav class="dots-bar" aria-label="Navegar entre questões">
+      ${dotsHTML.join("")}
+    </nav>
+
+    <main class="carousel-viewport" id="viewport">
+      <div class="carousel-track" id="track">
+        ${slidesHTML.join("")}
+      </div>
+    </main>
+
+    <footer class="nav-bar">
+      <button type="button" class="nav-btn" id="prevBtn">← Anterior</button>
+      <span class="swipe-hint">Deslize para o lado</span>
+      <button type="button" class="nav-btn" id="nextBtn">Próxima →</button>
+    </footer>
+  </div>
+
+  <script>
+    const total = ${total};
+    let current = ${safeStart};
+    const track = document.getElementById("track");
+    const counterLabel = document.getElementById("counterLabel");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const dots = [...document.querySelectorAll(".dot-btn")];
+
+    function goTo(index) {
+      current = Math.max(0, Math.min(total - 1, index));
+      track.style.transform = "translateX(-" + (current * 100) + "%)";
+      counterLabel.textContent = "Questão " + String(current + 1).padStart(2, "0") + " de " + String(total).padStart(2, "0");
+      prevBtn.disabled = current === 0;
+      nextBtn.disabled = current === total - 1;
+      dots.forEach((dot, idx) => {
+        dot.classList.toggle("is-active", idx === current);
+        if (idx === current) {
+          dot.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        }
+      });
+    }
+
+    prevBtn.addEventListener("click", () => goTo(current - 1));
+    nextBtn.addEventListener("click", () => goTo(current + 1));
+    dots.forEach((dot) => {
+      dot.addEventListener("click", () => goTo(Number(dot.dataset.slide)));
+    });
+
+    document.getElementById("closeBtn").addEventListener("click", () => {
+      window.parent.postMessage({ type: "close-review-iframe" }, "*");
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") goTo(current - 1);
+      if (e.key === "ArrowRight") goTo(current + 1);
+      if (e.key === "Escape") window.parent.postMessage({ type: "close-review-iframe" }, "*");
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const viewport = document.getElementById("viewport");
+    viewport.addEventListener("touchstart", (e) => {
+      touchStartX = e.changedTouches[0].clientX;
+      touchStartY = e.changedTouches[0].clientY;
+    }, { passive: true });
+
+    viewport.addEventListener("touchend", (e) => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      const dy = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx < 0) goTo(current + 1);
+        else goTo(current - 1);
+      }
+    }, { passive: true });
+
+    goTo(current);
+  </script>
+</body>
+</html>`;
+}
+
+function closeReviewIframeModal() {
+  const existing = document.querySelector("#playerReviewModal");
+  if (existing) {
+    existing.remove();
+  }
+}
+
+function openReviewIframeModal(startIndex = 0) {
+  if (!currentPlayer || !currentGame) return;
+  closeReviewIframeModal();
+
+  const durationMs = getQuestionDurationMs(currentGame);
+  const maxCount = currentGame.status === "final"
+    ? GAME_QUESTIONS.length
+    : Math.min(GAME_QUESTIONS.length, Number(currentGame.questionIndex ?? 0) + 1);
+
+  const modal = document.createElement("div");
+  modal.id = "playerReviewModal";
+  modal.className = "review-iframe-backdrop";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Carrossel de revisão das questões");
+
+  modal.innerHTML = `
+    <div class="review-iframe-dialog">
+      <iframe
+        class="review-carousel-iframe"
+        title="Carrossel de revisão das questões"
+        sandbox="allow-scripts"
+      ></iframe>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const iframe = modal.querySelector("iframe");
+  iframe.srcdoc = buildReviewCarouselSrcdoc(
+    currentPlayer.answers || {},
+    startIndex,
+    durationMs,
+    maxCount
+  );
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      window.GameAudio?.playEffect("click");
+      closeReviewIframeModal();
+    }
+  });
+}
+
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "close-review-iframe") {
+    window.GameAudio?.playEffect("click");
+    closeReviewIframeModal();
+  }
+});
+
 function renderRanking(players, game) {
   const topPlayers = (players || []).slice(0, 5);
   const isFinal = game?.status === "final";
@@ -316,6 +1008,7 @@ function cleanupListeners() {
 
 function clearSession() {
   cleanupListeners();
+  closeReviewIframeModal();
   window.clearInterval(timerInterval);
   sessionStorage.removeItem("conexao-game-player-id");
   sessionStorage.removeItem("conexao-game-room");
@@ -365,10 +1058,12 @@ function renderGame(game, players) {
   const isDouble = isDoublePointsQuestion(qIndex, question);
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
   const myStreak = getActiveStreak(currentPlayer, game);
+  const durationMs = getQuestionDurationMs(game);
 
   const stateSoundKey = `${game.status}:${qKey}`;
   if (stateSoundKey !== lastPlayerStateSoundKey) {
     if (game.status === "question") {
+      closeReviewIframeModal();
       lastPlayerUrgentSecond = -1;
       if (isDouble) {
         window.GameAudio?.playEffect("doublePointsStart");
@@ -447,7 +1142,6 @@ function renderGame(game, players) {
   const ranking = renderRanking(players, game);
 
   if (game.status === "question" && question) {
-    const durationMs = getQuestionDurationMs(game);
     const remaining = getSyncedRemainingMs(game);
     const secs = Math.ceil(remaining / 1000);
     const isUrgent = secs > 0 && secs <= 5;
@@ -505,7 +1199,7 @@ function renderGame(game, players) {
         </div>
         <p class="player-feedback-box${lastChoice !== null ? " is-locked" : ""}" id="playerFeedback" aria-live="polite">
           ${roundAnswer
-            ? `Resposta registrada! ${roundAnswer.correct ? `Você garantiu +${Number(roundAnswer.pointsEarned || 0).toLocaleString("pt-BR")} pts.` : "Aguarde a revelação no telão."}`
+            ? `Resposta registrada em ${formatSecondsPt(getAnswerResponseTimeMs(roundAnswer, durationMs) || 1000)}! ${roundAnswer.correct ? `Você garantiu +${Number(roundAnswer.pointsEarned || 0).toLocaleString("pt-BR")} pts.` : "Aguarde a revelação no telão."}`
             : pendingChoice !== null
               ? "Registrando sua resposta..."
               : nextStreakIfRight >= 2
@@ -560,6 +1254,9 @@ function renderGame(game, players) {
     if (lastChoice !== null && roundAnswer) {
       const wasCorrect = Boolean(roundAnswer.correct) || lastChoice === correctIndex;
       const earned = Number(roundAnswer.pointsEarned || (wasCorrect ? BASE_POINTS * multiplier : 0));
+      const respMs = getAnswerResponseTimeMs(roundAnswer, durationMs);
+      const timeChip = respMs !== null ? `<span>⏱ Tempo: <b>${formatSecondsPt(respMs)}</b></span>` : "";
+
       if (wasCorrect) {
         const baseShown = Number(roundAnswer.basePoints || BASE_POINTS) * multiplier;
         const speedShown = Number(roundAnswer.speedBonus || 0) * multiplier;
@@ -576,6 +1273,7 @@ function renderGame(game, players) {
 
         breakdownHTML = `
           <div class="points-breakdown-row">
+            ${timeChip}
             <span>Acerto: <b>+${baseShown.toLocaleString("pt-BR")}</b></span>
             <span>⚡ Rapidez: <b>+${speedShown.toLocaleString("pt-BR")}</b></span>
             ${streakShown > 0 ? `<span class="is-fire">🔥 Sequência (${ansStreak}x): <b>+${streakShown.toLocaleString("pt-BR")}</b></span>` : ""}
@@ -585,8 +1283,15 @@ function renderGame(game, players) {
         bannerClass = "is-incorrect";
         bannerText = "✕ Não foi dessa vez (sequência zerada)";
         bannerPts = "0 PTS";
+        breakdownHTML = timeChip ? `<div class="points-breakdown-row">${timeChip}</div>` : "";
       }
     }
+
+    const playedHistoryHTML = renderQuestionHistoryGrid(
+      currentPlayer.answers || {},
+      durationMs,
+      qIndex + 1
+    );
 
     gameContent.innerHTML = `
       <article class="player-card${isDouble ? " is-double-points" : ""}">
@@ -621,6 +1326,7 @@ function renderGame(game, players) {
           <b>POR QUE É A MAIS SEGURA?</b>
           ${escapeHTML(question.explanation)}
         </div>
+        ${playedHistoryHTML}
         ${ranking}
       </article>
     `;
@@ -653,6 +1359,12 @@ function renderGame(game, players) {
     `
     : "";
 
+  const fullHistoryHTML = renderQuestionHistoryGrid(
+    currentPlayer.answers || {},
+    durationMs,
+    GAME_QUESTIONS.length
+  );
+
   gameContent.innerHTML = `
     <article class="player-card">
       ${header}
@@ -676,6 +1388,7 @@ function renderGame(game, players) {
           <span>ACERTOS</span>
         </div>
       </div>
+      ${fullHistoryHTML}
       ${ranking}
       <p class="player-waiting" style="margin-top: 16px;">Obrigado por jogar! Reveja as dicas com a turma.</p>
       <button type="button" class="secondary-action-btn" id="leaveRoomBtn">Entrar em outra sala</button>
@@ -825,6 +1538,13 @@ avatarFields.forEach((field) => {
 renderAvatarPreview();
 
 gameContent.addEventListener("click", async (event) => {
+  const reviewTile = event.target.closest("[data-open-review]");
+  if (reviewTile) {
+    window.GameAudio?.playEffect("select");
+    openReviewIframeModal(Number(reviewTile.dataset.openReview));
+    return;
+  }
+
   const button = event.target.closest("[data-choice]");
   if (!button || submitting || !playerId || !playerRoom || !currentGame) return;
 
@@ -839,6 +1559,7 @@ gameContent.addEventListener("click", async (event) => {
   const choice = Number(button.dataset.choice);
   const durationMs = getQuestionDurationMs(currentGame);
   const timeLeft = getSyncedRemainingMs(currentGame);
+  const responseTimeMs = Math.max(100, Math.min(durationMs, durationMs - timeLeft));
   const multiplier = isDoublePointsQuestion(qIndex, question) ? 2 : 1;
 
   submitting = true;
@@ -864,6 +1585,7 @@ gameContent.addEventListener("click", async (event) => {
       streakBonus,
       streak: newStreak,
       pointsEarned,
+      responseTimeMs,
       doublePoints: multiplier === 2,
       answeredAt: Date.now()
     };
