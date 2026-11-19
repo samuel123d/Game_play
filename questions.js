@@ -1,82 +1,114 @@
 export const GAME_QUESTIONS = [
   {
-    prompt: "Um formulário pede CPF, foto do documento e nome da mãe para baixar um folheto gratuito. Qual é o melhor próximo passo?",
+    prompt: "De acordo com a apresentação, o que significa Inclusão Digital?",
     choices: [
-      "Preencher: todo cadastro pede esses dados",
-      "Parar e confirmar se os dados são realmente necessários",
-      "Inventar um CPF e enviar a foto"
+      "Apenas comprar um celular novo de última geração.",
+      "Garantir que todas as pessoas acessem e usem a tecnologia de forma consciente, segura e útil.",
+      "Usar a internet somente para jogos e redes sociais."
     ],
     answer: 1,
-    explanation: "Peça apenas os dados necessários. Um pedido excessivo é motivo para pausar e confirmar quem está coletando as informações."
+    explanation:
+      "Inclusão digital é permitir que qualquer pessoa, em qualquer idade, acesse e utilize a tecnologia com consciência, segurança e utilidade no dia a dia."
   },
   {
-    prompt: "Você encontra um cadastro por um anúncio e o endereço tem uma letra diferente do site que conhece. O que fazer?",
+    prompt: "Qual recurso de acessibilidade traduz conteúdos digitais para a Língua Brasileira de Sinais (Libras)?",
     choices: [
-      "Conferir pelo aplicativo ou endereço oficial que você já conhece",
-      "Continuar se houver um cadeado no navegador",
-      "Entrar com a mesma senha usada no banco"
+      "VLibras",
+      "TalkBack",
+      "Autime"
     ],
     answer: 0,
-    explanation: "Um cadeado indica uma conexão criptografada, não que o site seja legítimo. Confira o endereço por um canal confiável."
+    explanation:
+      "O VLibras traduz conteúdos digitais para Libras, garantindo participação para pessoas surdas. Já o TalkBack faz leitura de tela e o Autime apoia rotinas visuais."
   },
   {
-    prompt: "Ao preencher um endereço, você percebe que digitou um número errado. Antes de continuar:",
+    prompt: "Qual é a plataforma oficial para acessar serviços públicos digitais do governo brasileiro?",
     choices: [
-      "Enviar mesmo assim para não perder o formulário",
-      "Revisar o campo e corrigir usando informação confirmada",
-      "Usar o endereço de outra pessoa"
+      "iFood",
+      "Safari",
+      "gov.br"
+    ],
+    answer: 2,
+    explanation:
+      "O gov.br é a plataforma oficial do Governo Federal que reúne documentos e serviços públicos digitais em um só lugar."
+  },
+  {
+    prompt: "Para que servem os navegadores de internet, como Google Chrome e Safari?",
+    choices: [
+      "São aplicativos exclusivos para pedir comida por delivery.",
+      "São programas usados para acessar sites e pesquisar informações na internet.",
+      "São ferramentas usadas apenas para editar fotografias."
     ],
     answer: 1,
-    explanation: "Confira cada campo antes de avançar. Dados incorretos podem impedir contato ou causar problemas no cadastro."
+    explanation:
+      "Navegadores como Google Chrome e Safari permitem abrir páginas, ler notícias e pesquisar informações na internet."
   },
   {
-    prompt: "Um formulário pede um código que chegou por SMS para “confirmar sua identidade”. Qual cuidado é essencial?",
+    prompt: "O que é a tecnologia de golpe conhecida como Deepfake?",
     choices: [
-      "Compartilhar o código com quem estiver ajudando por mensagem",
-      "Digitar o código apenas no serviço oficial que você abriu",
-      "Enviar uma captura da tela para o suporte"
-    ],
-    answer: 1,
-    explanation: "Códigos de uso único são secretos. Não os envie a outra pessoa nem compartilhe por telefone ou mensagem."
-  },
-  {
-    prompt: "O site diz que o cadastro é gratuito, mas uma tela inesperada pede dados do cartão para liberar uma conta básica. Você deve:",
-    choices: [
-      "Parar e verificar a oferta e o endereço por um canal oficial",
-      "Preencher: o cadeado garante que é seguro",
-      "Tentar com o cartão de um familiar"
+      "Uso de inteligência artificial para trocar rostos e imitar vozes, criando vídeos ou áudios falsos muito realistas.",
+      "Um aplicativo oficial para fazer chamadas de vídeo com filhos e netos.",
+      "Um recurso do celular que aumenta o tamanho das letras na tela."
     ],
     answer: 0,
-    explanation: "Uma conexão segura não prova que a cobrança é legítima. Confirme se o serviço e a cobrança correspondem ao que você pretendia."
+    explanation:
+      "O Deepfake usa inteligência artificial para manipular rostos, expressões e vozes, criando conteúdos falsos que parecem reais.",
+    doublePoints: true
   },
   {
-    prompt: "Você usou um computador compartilhado para preencher um cadastro. O que fazer ao terminar?",
+    prompt: "Como funciona o golpe digital chamado Phishing?",
     choices: [
-      "Salvar a senha no navegador para a próxima pessoa",
-      "Sair da conta e não salvar senha nem documentos",
-      "Deixar o formulário aberto para voltar depois"
+      "O celular fica lento por falta de espaço na memória.",
+      "Um aplicativo gratuito ensina cursos sem pedir cadastro.",
+      "Criminosos se passam por bancos, lojas ou órgãos oficiais para roubar dados, senhas e cartão."
+    ],
+    answer: 2,
+    explanation:
+      "No Phishing, golpistas imitam instituições de confiança com links falsos e mensagens urgentes para 'pescar' suas senhas e dados pessoais."
+    },
+  {
+    prompt: "Sobre os perigos nos jogos online, o que estabelece a Lei Felca (ECA Digital)?",
+    choices: [
+      "Libera anúncios abusivos e caixas de recompensa pagas para crianças.",
+      "Exige verificação de idade, controle parental e proíbe loot boxes pagas para menores.",
+      "Obriga crianças e adolescentes a compartilharem dados pessoais nos jogos."
     ],
     answer: 1,
-    explanation: "Em aparelhos compartilhados, encerre a sessão e evite salvar senhas ou deixar documentos e páginas abertas."
+    explanation:
+      "A Lei Felca (ECA Digital) protege crianças e adolescentes exigindo verificação rigorosa de idade, controle parental e proibindo caixas de azar pagas (loot boxes) e anúncios abusivos."
   },
   {
-    prompt: "Um formulário de inscrição em um curso pede uma senha. Qual opção reduz o risco se o site tiver um problema?",
+    prompt: "Você recebe uma mensagem com erros de português ameaçando bloquear sua conta se não clicar em um link agora. O que fazer?",
     choices: [
-      "Repetir a senha do e-mail para não esquecer",
-      "Criar uma senha longa e exclusiva para esse serviço",
-      "Usar nome e data de nascimento"
-    ],
-    answer: 1,
-    explanation: "Uma senha única impede que a exposição de uma conta abra automaticamente as outras."
-  },
-  {
-    prompt: "Antes de tocar em “Enviar cadastro”, qual revisão é mais segura?",
-    choices: [
-      "Conferir endereço do site, dados digitados e finalidade dos campos",
-      "Verificar apenas se todos os campos estão preenchidos",
-      "Enviar rápido e corrigir depois por um link recebido"
+      "Não clicar no link, desconfiar da pressa e confirmar pelo canal oficial ou com um familiar.",
+      "Clicar rapidamente e digitar sua senha para evitar o bloqueio.",
+      "Encaminhar o link para todos os contatos do WhatsApp."
     ],
     answer: 0,
-    explanation: "Confira se está no serviço certo, se os dados estão corretos e se os campos pedidos fazem sentido antes de enviar."
+    explanation:
+      "Erros de português, links estranhos e ameaças de bloqueio imediato são sinais de golpe. Sempre confirme por outro meio antes de clicar."
+  },
+  {
+    prompt: "Na apresentação, comparamos a senha à chave da nossa casa. Qual é o cuidado mais seguro?",
+    choices: [
+      "Usar a data de nascimento para não esquecer e enviar no WhatsApp.",
+      "Anotar a senha atrás do celular e usar sequências como 123456.",
+      "Misturar letras, números e símbolos e nunca compartilhar com outras pessoas."
+    ],
+    answer: 2,
+    explanation:
+      "Senhas seguras combinam letras, números e símbolos, evitam datas pessoais e nunca devem ser anotadas em locais visíveis ou enviadas por mensagem."
+  },
+  {
+    prompt: "⚡ DESAFIO FINAL: Um número novo envia um áudio com a voz de um familiar pedindo um PIX urgente. Qual é a atitude mais segura?",
+    choices: [
+      "Fazer o PIX na hora porque a voz no áudio é idêntica à do familiar.",
+      "Ligar para o número antigo do familiar ou confirmar por outro meio antes de transferir.",
+      "Responder informando a senha do banco para ajudar mais rápido."
+    ],
+    answer: 1,
+    explanation:
+      "Com o avanço do Deepfake de voz e golpes no WhatsApp, sempre ligue para o contato original ou confirme com outro familiar antes de fazer qualquer transferência.",
+    doublePoints: true
   }
 ];
