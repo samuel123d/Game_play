@@ -1,35 +1,3 @@
-export const DEFAULT_ROOM_SETTINGS = {
-  maxPlayers: 40,
-  minPlayers: 1,
-  waitTimeSeconds: 60,
-  countdownSeconds: 5,
-  questionDurationSeconds: 20,
-  autoStart: true,
-  allowLateJoin: false,
-  allowReview: true,
-  allowRetry: true
-};
-
-export function normalizeRoomSettings(raw) {
-  const src = raw && typeof raw === "object" ? raw : {};
-  const clampInt = (val, min, max, fallback) => {
-    const n = Number(val);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, Math.round(n)));
-  };
-  return {
-    maxPlayers: clampInt(src.maxPlayers, 2, 200, DEFAULT_ROOM_SETTINGS.maxPlayers),
-    minPlayers: clampInt(src.minPlayers, 1, 100, DEFAULT_ROOM_SETTINGS.minPlayers),
-    waitTimeSeconds: clampInt(src.waitTimeSeconds, 0, 600, DEFAULT_ROOM_SETTINGS.waitTimeSeconds),
-    countdownSeconds: clampInt(src.countdownSeconds, 3, 15, DEFAULT_ROOM_SETTINGS.countdownSeconds),
-    questionDurationSeconds: clampInt(src.questionDurationSeconds, 5, 120, DEFAULT_ROOM_SETTINGS.questionDurationSeconds),
-    autoStart: src.autoStart !== undefined ? Boolean(src.autoStart) : DEFAULT_ROOM_SETTINGS.autoStart,
-    allowLateJoin: src.allowLateJoin !== undefined ? Boolean(src.allowLateJoin) : DEFAULT_ROOM_SETTINGS.allowLateJoin,
-    allowReview: src.allowReview !== undefined ? Boolean(src.allowReview) : DEFAULT_ROOM_SETTINGS.allowReview,
-    allowRetry: src.allowRetry !== undefined ? Boolean(src.allowRetry) : DEFAULT_ROOM_SETTINGS.allowRetry
-  };
-}
-
 export const GAME_QUESTIONS = [
   {
     prompt: "Um formulário pede CPF, foto do documento e nome da mãe para baixar um folheto gratuito. Qual é o melhor próximo passo?",
