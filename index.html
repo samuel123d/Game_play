@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070917" />
+    <title>Desafio Relâmpago · Conexão</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Conexão, início do jogo">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span>CONEXÃO<span class="brand-dot">.</span></span>
+        </a>
+        <div class="topbar-center">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span>DESAFIO INTERATIVO AO VIVO</span>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="audioToggle" type="button" aria-pressed="false" title="Ativar ou silenciar som">
+            <span>♫ Som</span>
+          </button>
+          <button class="icon-button connect-toggle" id="connectToggle" type="button" title="Conectar controle pelo celular">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.75" width="10" height="18.5" rx="2"/><path d="M10 6h4M11 18h2"/></svg>
+            <span>Controle</span>
+          </button>
+          <button class="icon-button fullscreen-toggle" id="fullscreenToggle" type="button" title="Tela cheia (F)" aria-label="Abrir em tela cheia">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.75H5a.25.25 0 0 0-.25.25v3.5M15.5 4.75H19a.25.25 0 0 1 .25.25v3.5M8.5 19.25H5a.25.25 0 0 1-.25-.25v-3.5M15.5 19.25H19a.25.25 0 0 0 .25-.25v-3.5"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="presentation" aria-label="Área do Jogo">
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+        <div class="grid-glow" aria-hidden="true"></div>
+
+        <div class="stage-wrap">
+          <div class="stage" id="stage" tabindex="-1" aria-live="polite">
+            <section class="game-overlay" id="gameOverlay" aria-label="Desafio cronometrado">
+              <div id="gameContent"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="connect-dialog" id="connectDialog" aria-labelledby="connectTitle">
+      <form method="dialog" class="connect-card">
+        <button class="dialog-close" type="submit" aria-label="Fechar">×</button>
+        <p class="eyebrow">CONTROLE REMOTO DO JOGO</p>
+        <h2 id="connectTitle">Comande o quiz.<br /><span class="accent">Na palma da mão.</span></h2>
+        <p class="connect-copy">Conecte o computador e o celular na mesma rede Wi-Fi. Escaneie o QR Code ou acesse o endereço abaixo com o PIN.</p>
+        <div class="connect-content">
+          <div class="qr-frame" id="qrCode"></div>
+          <div class="connect-details">
+            <span class="connect-label">ENDEREÇO DO CONTROLE</span>
+            <code class="connect-url" id="connectUrl"></code>
+            <span class="connect-label">PIN DE EMPARELHAMENTO</span>
+            <strong class="connect-pin" id="connectPin">······</strong>
+            <button type="button" class="copy-url" id="copyUrl">Copiar endereço</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./qr.js"></script>
+    <script src="./avatar.js"></script>
+    <script src="./game-audio.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080a18" />
+    <meta name="description" content="Participe do desafio educativo de cadastro online seguro." />
+    <title>Desafio relâmpago · Conexão</title>
+    <link rel="stylesheet" href="./play.css" />
+  </head>
+  <body>
+    <main class="player-shell">
+      <header class="player-header">
+        <a href="/" class="player-brand">CONEXÃO<span>.</span></a>
+        <button class="player-audio-toggle" id="playerAudioToggle" type="button" aria-pressed="false">♫ Som desligado</button>
+        <span class="player-connection" id="playerConnection">FORA DA SALA</span>
+      </header>
+
+      <section class="player-join" id="playerJoin">
+        <p class="player-eyebrow">JOGO EDUCATIVO · CADASTRO SEGURO</p>
+        <h1>Entre no<br /><span>desafio.</span></h1>
+        <p class="player-intro">Use um apelido inventado. Não informe nome completo, telefone, senha, documento ou qualquer dado pessoal.</p>
+        <form id="playerJoinForm">
+          <label for="playerRoomCode">CÓDIGO DA SALA</label>
+          <input id="playerRoomCode" name="roomCode" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="off" placeholder="00000" required />
+          <label for="playerName">SEU APELIDO</label>
+          <input id="playerName" name="name" type="text" minlength="2" maxlength="20" autocomplete="off" placeholder="Ex.: Nuvem Azul" required />
+          <section class="avatar-creator" aria-labelledby="avatarCreatorTitle">
+            <div class="avatar-creator-heading">
+              <div><span>PERSONALIZE</span><h2 id="avatarCreatorTitle">Seu avatar do jogo</h2></div>
+              <div id="avatarPreview" aria-live="polite"></div>
+            </div>
+            <div class="avatar-fields">
+              <label for="avatarSkin">TOM DE PELE
+                <select id="avatarSkin" data-avatar-field="skin">
+                  <option value="light">Claro</option><option value="medium" selected>Médio</option><option value="tan">Moreno</option><option value="dark">Escuro</option>
+                </select>
+              </label>
+              <label for="avatarHair">CABELO
+                <select id="avatarHair" data-avatar-field="hair">
+                  <option value="short" selected>Curto</option><option value="long">Longo</option><option value="curly">Cacheado</option><option value="bun">Coque</option>
+                </select>
+              </label>
+              <label for="avatarHairColor">COR DO CABELO
+                <select id="avatarHairColor" data-avatar-field="hairColor">
+                  <option value="brown" selected>Castanho</option><option value="black">Preto</option><option value="blonde">Loiro</option><option value="blue">Azul</option><option value="pink">Rosa</option>
+                </select>
+              </label>
+              <label for="avatarAccessory">ACESSÓRIO
+                <select id="avatarAccessory" data-avatar-field="accessory">
+                  <option value="none" selected>Nenhum</option><option value="glasses">Óculos</option><option value="crown">Coroa</option><option value="headphones">Fone</option><option value="cap">Boné</option>
+                </select>
+              </label>
+            </div>
+            <p>Seu avatar é uma ilustração. Não use foto ou informação pessoal.</p>
+          </section>
+          <button type="submit" id="joinButton">Entrar na sala <span>→</span></button>
+          <p class="player-error" id="playerJoinError" role="alert"></p>
+        </form>
+        <p class="player-privacy">Esta atividade usa apenas um apelido temporário. Nenhum cadastro é salvo ou enviado a serviços externos.</p>
+      </section>
+
+      <section class="player-game" id="playerGame" hidden aria-live="polite">
+        <div id="playerGameContent"></div>
+      </section>
+      <p class="player-status" id="playerStatus" role="status" aria-live="polite"></p>
+    </main>
+    <script src="./avatar.js"></script>
+    <script src="./game-audio.js"></script>
+    <script src="./play.js"></script>
+  </body>
+</html>
