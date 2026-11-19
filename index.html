@@ -1,80 +1,86 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070917" />
-    <title>Desafio Relâmpago · Conexão</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <main class="app">
-      <header class="topbar">
-        <a class="brand" href="#" aria-label="Conexão, início do jogo">
-          <span class="brand-mark" aria-hidden="true"><span></span></span>
-          <span>CONEXÃO<span class="brand-dot">.</span></span>
-        </a>
-        <div class="topbar-center">
-          <span class="live-dot" aria-hidden="true"></span>
-          <span>DESAFIO INTERATIVO AO VIVO</span>
-        </div>
-        <div class="topbar-actions">
-          <button class="icon-button" id="audioToggle" type="button" aria-pressed="false" title="Ativar ou silenciar som">
-            <span>♫ Som</span>
-          </button>
-          <button class="icon-button connect-toggle" id="connectToggle" type="button" title="Conectar controle pelo celular">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.75" width="10" height="18.5" rx="2"/><path d="M10 6h4M11 18h2"/></svg>
-            <span>Controle</span>
-          </button>
-          <button class="icon-button fullscreen-toggle" id="fullscreenToggle" type="button" title="Tela cheia (F)" aria-label="Abrir em tela cheia">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.75H5a.25.25 0 0 0-.25.25v3.5M15.5 4.75H19a.25.25 0 0 1 .25.25v3.5M8.5 19.25H5a.25.25 0 0 1-.25-.25v-3.5M15.5 19.25H19a.25.25 0 0 0 .25-.25v-3.5"/></svg>
-          </button>
-        </div>
-      </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arcade Pulse v2 — Gameplay Web (Firebase Firestore)</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>ARCADE PULSE <span class="ver-tag">v2</span></h1>
+        <p class="subtitle">Jogo web com combos, dificuldade progressiva e placar ao vivo no Firestore (sem login)</p>
+      </div>
+      <div class="session-badge">
+        <span class="dot" id="statusDot"></span>
+        <span id="sessionText">Conectando ao Firebase...</span>
+      </div>
+    </header>
 
-      <section class="presentation" aria-label="Área do Jogo">
-        <div class="ambient ambient-one" aria-hidden="true"></div>
-        <div class="ambient ambient-two" aria-hidden="true"></div>
-        <div class="grid-glow" aria-hidden="true"></div>
-
-        <div class="stage-wrap">
-          <div class="stage" id="stage" tabindex="-1" aria-live="polite">
-            <section class="game-overlay" id="gameOverlay" aria-label="Desafio cronometrado">
-              <div id="gameContent"></div>
-            </section>
+    <main class="grid">
+      <section class="panel game-panel">
+        <div class="hud">
+          <div class="hud-card">
+            <span class="hud-label">PONTUAÇÃO</span>
+            <strong id="scoreValue">0</strong>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">COMBO</span>
+            <strong id="comboValue">x1</strong>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">RECORDE PESSOAL</span>
+            <strong id="bestScoreValue">0</strong>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">TEMPO</span>
+            <strong id="timerValue">20.0s</strong>
           </div>
         </div>
+
+        <div class="arena" id="arena">
+          <div class="arena-overlay" id="arenaOverlay">
+            <h2>PRONTO PARA JOGAR?</h2>
+            <p>Acerte os alvos antes que expirem para construir <strong>COMBO</strong> e ganhar pontos bônus. Sem tela de login.</p>
+            <button id="startBtn" class="btn primary">Iniciar Partida</button>
+          </div>
+          <button id="targetBtn" class="target-btn" aria-label="Alvo do jogo" hidden>ALVO</button>
+        </div>
+
+        <div class="controls-row">
+          <label class="nickname-box">
+            <span>Apelido no placar:</span>
+            <input id="nicknameInput" type="text" maxlength="20" placeholder="Piloto" value="Piloto" />
+          </label>
+          <button id="submitScoreBtn" class="btn secondary" disabled>Salvar no Placar</button>
+        </div>
+        <p id="feedbackMsg" class="feedback"></p>
       </section>
-    </main>
 
-    <dialog class="connect-dialog" id="connectDialog" aria-labelledby="connectTitle">
-      <form method="dialog" class="connect-card">
-        <button class="dialog-close" type="submit" aria-label="Fechar">×</button>
-        <p class="eyebrow">CONTROLE REMOTO DO JOGO</p>
-        <h2 id="connectTitle">Comande o quiz.<br /><span class="accent">Na palma da mão.</span></h2>
-        <p class="connect-copy">Conecte o computador e o celular na mesma rede Wi-Fi. Escaneie o QR Code ou acesse o endereço abaixo com o PIN.</p>
-        <div class="connect-content">
-          <div class="qr-frame" id="qrCode"></div>
-          <div class="connect-details">
-            <span class="connect-label">ENDEREÇO DO CONTROLE</span>
-            <code class="connect-url" id="connectUrl"></code>
-            <span class="connect-label">PIN DE EMPARELHAMENTO</span>
-            <strong class="connect-pin" id="connectPin">······</strong>
-            <button type="button" class="copy-url" id="copyUrl">Copiar endereço</button>
-          </div>
+      <aside class="panel leaderboard-panel">
+        <div class="panel-header">
+          <h2>PLACAR GLOBAL (TOP 10)</h2>
+          <span class="pill">Firestore ao vivo</span>
         </div>
-      </form>
-    </dialog>
+        <ol id="leaderboardList" class="leaderboard-list">
+          <li class="empty">Carregando pontuações...</li>
+        </ol>
+      </aside>
+    </main>
+  </div>
 
-    <script src="./qr.js"></script>
-    <script src="./avatar.js"></script>
-    <script src="./game-audio.js"></script>
-    <script src="./app.js"></script>
-  </body>
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js",
+      "firebase/analytics": "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js"
+    }
+  }
+  </script>
+  <script type="module" src="./game.js"></script>
+</body>
 </html>

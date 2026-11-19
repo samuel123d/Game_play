@@ -1,0 +1,12 @@
+{
+  "name": "gameplay-firebase-web-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Arcade Pulse v2 conectado ao Firebase Firestore sem tela de login",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {
+    "firebase": "^11.0.0"
+  }
+}
