@@ -272,6 +272,7 @@ function setConnected(connected) {
 function renderRanking(players, game) {
   const topPlayers = (players || []).slice(0, 5);
   const isFinal = game?.status === "final";
+  const topScore = topPlayers[0]?.score ?? 0;
   return `
     <div class="player-ranking">
       <span>PLACAR DA SALA</span>
@@ -279,7 +280,8 @@ function renderRanking(players, game) {
         ${topPlayers.map((player, index) => {
           const isMe = player.id === playerId;
           const pStreak = getActiveStreak(player, game);
-          const avatarHtml = isFinal && index < 3
+          const isFirstPlace = isFinal && (index === 0 || (topScore > 0 && player.score === topScore));
+          const avatarHtml = isFirstPlace
             ? renderDancingAvatar(player.avatar, "game-avatar game-avatar-ranking", false)
             : renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak);
 

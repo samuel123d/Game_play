@@ -435,6 +435,7 @@ function renderStandings(players, game, qKey = null, isDouble = false) {
     return `<p class="game-empty">A classificação aparece aqui quando a rodada começar.</p>`;
   }
   const isFinal = game?.status === "final";
+  const topScore = top[0]?.score ?? 0;
   return `
     <ol class="game-standings">
       ${top.map((player, idx) => {
@@ -443,7 +444,8 @@ function renderStandings(players, game, qKey = null, isDouble = false) {
         const gainBadge = roundPts > 0
           ? `<span class="game-round-gain${isDouble ? " is-double" : ""}">+${roundPts.toLocaleString("pt-BR")}${isDouble ? " ⚡" : ""}</span>`
           : "";
-        const avatarHtml = isFinal && idx < 3
+        const isFirstPlace = isFinal && (idx === 0 || (topScore > 0 && player.score === topScore));
+        const avatarHtml = isFirstPlace
           ? renderDancingAvatar(player.avatar, "game-avatar game-avatar-ranking", false)
           : renderAvatarWithFire(player.avatar, "game-avatar game-avatar-ranking", pStreak);
 
