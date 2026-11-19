@@ -1,9 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getDatabase } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyChV_bSy5dlrkt0iTiE8g4_6W2ccePXXmc",
   authDomain: "gameplay-5ac93.firebaseapp.com",
+  databaseURL: "https://gameplay-5ac93-default-rtdb.firebaseio.com",
   projectId: "gameplay-5ac93",
   storageBucket: "gameplay-5ac93.firebasestorage.app",
   messagingSenderId: "847147184244",
@@ -12,4 +13,4 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = getDatabase(app);

@@ -12,18 +12,78 @@ import {
 const gameContent = document.querySelector("#gameContent");
 const hostStatus = document.querySelector("#hostStatus");
 const hostActions = document.querySelector("#hostActions");
+const topbarPhaseLabel = document.querySelector("#topbarPhaseLabel");
+
 const audioToggle = document.querySelector("#audioToggle");
+const audioToggleLabel = document.querySelector("#audioToggleLabel");
+const audioMixerBtn = document.querySelector("#audioMixerBtn");
+const audioPopover = document.querySelector("#audioPopover");
+const audioTestBtn = document.querySelector("#audioTestBtn");
+const musicVolumeSlider = document.querySelector("#musicVolumeSlider");
+const musicVolumeValue = document.querySelector("#musicVolumeValue");
+const sfxVolumeSlider = document.querySelector("#sfxVolumeSlider");
+const sfxVolumeValue = document.querySelector("#sfxVolumeValue");
+
 const fullscreenToggle = document.querySelector("#fullscreenToggle");
+const settingsToggleBtn = document.querySelector("#settingsToggleBtn");
+const settingsModal = document.querySelector("#settingsModal");
+const closeSettingsBtn = document.querySelector("#closeSettingsBtn");
+const matchSettingsForm = document.querySelector("#matchSettingsForm");
+const resetSettingsBtn = document.querySelector("#resetSettingsBtn");
 
-const QUESTION_DURATION_MS = 20000;
+const SETTINGS_STORAGE_KEY = "conexao-host-settings-v2";
+const DEFAULT_SETTINGS = {
+  maxPlayers: 30,
+  minPlayers: 1,
+  lobbyWaitSeconds: 0,
+  countdownSeconds: 5,
+  questionDurationSec: 20,
+  autoStart: true,
+  allowLateJoin: false,
+  allowReview: true,
+  allowReplay: true
+};
 
+function loadSavedSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+    return normalizeSettings({ ...DEFAULT_SETTINGS, ...parsed });
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function normalizeSettings(raw) {
+  const maxPlayers = Math.min(100, Math.max(2, Number(raw.maxPlayers) || 30));
+  const minPlayers = Math.min(maxPlayers, Math.max(1, Number(raw.minPlayers) || 1));
+  const lobbyWaitSeconds = Math.min(600, Math.max(0, Number(raw.lobbyWaitSeconds) || 0));
+  const countdownSeconds = Math.min(30, Math.max(3, Number(raw.countdownSeconds) || 5));
+  const questionDurationSec = Math.min(120, Math.max(5, Number(raw.questionDurationSec) || 20));
+  return {
+    maxPlayers,
+    minPlayers,
+    lobbyWaitSeconds,
+    countdownSeconds,
+    questionDurationSec,
+    autoStart: raw.autoStart !== false,
+    allowLateJoin: Boolean(raw.allowLateJoin),
+    allowReview: raw.allowReview !== false,
+    allowReplay: raw.allowReplay !== false
+  };
+}
+
+let draftSettings = loadSavedSettings();
 let activeRoomCode = sessionStorage.getItem("conexao-host-room") || null;
 let unsubRoom = null;
 let unsubPlayers = null;
 let currentGame = null;
 let currentPlayers = [];
 let timerInterval = 0;
-let autoRevealLock = false;
+let autoTransitionLock = false;
+let lastKnownPlayerCount = 0;
+let lastHostSoundKey = "";
+let lastCountdownTick = -1;
+let timeoutSoundPlayedFor = "";
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
@@ -37,6 +97,48 @@ function escapeHTML(value) {
 
 function generateRoomCode() {
   return String(Math.floor(10000 + Math.random() * 90000));
+}
+
+function getActiveSettings() {
+  if (currentGame?.settings) {
+    return normalizeSettings({ ...DEFAULT_SETTINGS, ...currentGame.settings });
+  }
+  return draftSettings;
+}
+
+function syncSettingsForm(settings) {
+  document.querySelector("#cfgMaxPlayers").value = String(settings.maxPlayers);
+  document.querySelector("#cfgMinPlayers").value = String(settings.minPlayers);
+  document.querySelector("#cfgLobbyWait").value = String(settings.lobbyWaitSeconds);
+  document.querySelector("#cfgCountdown").value = String(settings.countdownSeconds);
+  document.querySelector("#cfgQuestionTime").value = String(settings.questionDurationSec);
+  document.querySelector("#cfgAutoStart").checked = settings.autoStart;
+  document.querySelector("#cfgLateJoin").checked = settings.allowLateJoin;
+  document.querySelector("#cfgAllowReview").checked = settings.allowReview;
+  document.querySelector("#cfgAllowReplay").checked = settings.allowReplay;
+}
+
+function readSettingsForm() {
+  return normalizeSettings({
+    maxPlayers: document.querySelector("#cfgMaxPlayers").value,
+    minPlayers: document.querySelector("#cfgMinPlayers").value,
+    lobbyWaitSeconds: document.querySelector("#cfgLobbyWait").value,
+    countdownSeconds: document.querySelector("#cfgCountdown").value,
+    questionDurationSec: document.querySelector("#cfgQuestionTime").value,
+    autoStart: document.querySelector("#cfgAutoStart").checked,
+    allowLateJoin: document.querySelector("#cfgLateJoin").checked,
+    allowReview: document.querySelector("#cfgAllowReview").checked,
+    allowReplay: document.querySelector("#cfgAllowReplay").checked
+  });
+}
+
+function openSettingsModal() {
+  syncSettingsForm(getActiveSettings());
+  settingsModal.hidden = false;
+}
+
+function closeSettingsModal() {
+  settingsModal.hidden = true;
 }
 
 function cleanupListeners() {
@@ -55,6 +157,10 @@ function subscribeToRoom(roomCode) {
   activeRoomCode = roomCode;
   sessionStorage.setItem("conexao-host-room", roomCode);
   currentPlayers = [];
+  lastKnownPlayerCount = 0;
+  lastHostSoundKey = "";
+  lastCountdownTick = -1;
+  timeoutSoundPlayedFor = "";
 
   const roomDocRef = doc(db, "rooms", roomCode);
   const playersColRef = collection(db, "rooms", roomCode, "players");
@@ -65,6 +171,8 @@ function subscribeToRoom(roomCode) {
       sessionStorage.removeItem("conexao-host-room");
       activeRoomCode = null;
       cleanupListeners();
+      window.GameConfetti?.stop();
+      window.GameAudio?.setTrack("none");
       renderWelcomeScreen();
       return;
     }
@@ -74,6 +182,8 @@ function subscribeToRoom(roomCode) {
       sessionStorage.removeItem("conexao-host-room");
       activeRoomCode = null;
       cleanupListeners();
+      window.GameConfetti?.stop();
+      window.GameAudio?.setTrack("none");
       renderWelcomeScreen();
       return;
     }
@@ -84,18 +194,25 @@ function subscribeToRoom(roomCode) {
   });
 
   unsubPlayers = onSnapshot(playersColRef, (snapshot) => {
-    currentPlayers = snapshot.docs
+    const nextPlayers = snapshot.docs
       .map((d) => {
         const data = d.data();
         return {
           id: d.id,
           name: data.name || "Participante",
           score: Number(data.score || 0),
+          attemptNumber: Number(data.attemptNumber || 1),
           avatar: data.avatar || {},
           answers: data.answers || {}
         };
       })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "pt-BR"));
+
+    if (currentGame?.status === "lobby" && nextPlayers.length > lastKnownPlayerCount) {
+      window.GameAudio?.playEffect("join");
+    }
+    lastKnownPlayerCount = nextPlayers.length;
+    currentPlayers = nextPlayers;
 
     if (currentGame && currentGame.status !== "closed") {
       renderGame(currentGame, currentPlayers);
@@ -114,6 +231,7 @@ async function openNewRoom() {
 
   buttons.forEach((btn) => { btn.disabled = true; });
   hostStatus.textContent = "Criando sala no Firestore...";
+  window.GameConfetti?.stop();
 
   try {
     let code = generateRoomCode();
@@ -123,14 +241,23 @@ async function openNewRoom() {
       code = generateRoomCode();
     }
 
-    autoRevealLock = false;
+    const settings = normalizeSettings(draftSettings);
+    const now = Date.now();
+    const lobbyEndsAt = settings.lobbyWaitSeconds > 0
+      ? now + settings.lobbyWaitSeconds * 1000
+      : null;
+
+    autoTransitionLock = false;
     await setDoc(doc(db, "rooms", code), {
       roomCode: code,
       status: "lobby",
       questionIndex: -1,
       questionCount: GAME_QUESTIONS.length,
       questionEndsAt: null,
-      createdAt: Date.now()
+      lobbyEndsAt,
+      countdownEndsAt: null,
+      settings,
+      createdAt: now
     });
     subscribeToRoom(code);
   } catch (error) {
@@ -140,28 +267,63 @@ async function openNewRoom() {
   }
 }
 
-async function startChallenge() {
-  if (!activeRoomCode || !currentGame) return;
-  if (currentPlayers.length === 0) {
-    hostStatus.textContent = "Aguarde pelo menos 1 participante entrar pelo QR Code.";
+async function beginCountdown() {
+  if (!activeRoomCode || !currentGame || currentGame.status !== "lobby") return;
+  const settings = getActiveSettings();
+  if (currentPlayers.length < settings.minPlayers) {
+    hostStatus.textContent = `São necessários pelo menos ${settings.minPlayers} participante(s) para iniciar.`;
     return;
   }
-  autoRevealLock = false;
-  await updateDoc(doc(db, "rooms", activeRoomCode), {
-    status: "question",
-    questionIndex: 0,
-    questionEndsAt: Date.now() + QUESTION_DURATION_MS
-  });
+  if (autoTransitionLock) return;
+  autoTransitionLock = true;
+  lastCountdownTick = -1;
+
+  try {
+    await updateDoc(doc(db, "rooms", activeRoomCode), {
+      status: "countdown",
+      lobbyEndsAt: null,
+      countdownEndsAt: Date.now() + settings.countdownSeconds * 1000
+    });
+  } catch (error) {
+    hostStatus.textContent = `Erro ao iniciar contagem: ${error.message}`;
+  } finally {
+    autoTransitionLock = false;
+  }
+}
+
+async function launchFirstQuestion() {
+  if (!activeRoomCode || !currentGame) return;
+  if (autoTransitionLock) return;
+  autoTransitionLock = true;
+  const settings = getActiveSettings();
+
+  try {
+    await updateDoc(doc(db, "rooms", activeRoomCode), {
+      status: "question",
+      questionIndex: 0,
+      lobbyEndsAt: null,
+      countdownEndsAt: null,
+      questionEndsAt: Date.now() + settings.questionDurationSec * 1000
+    });
+  } catch (error) {
+    hostStatus.textContent = `Erro ao iniciar perguntas: ${error.message}`;
+  } finally {
+    autoTransitionLock = false;
+  }
 }
 
 async function revealAnswer() {
   if (!activeRoomCode || !currentGame || currentGame.status !== "question") return;
-  if (autoRevealLock) return;
-  autoRevealLock = true;
-  await updateDoc(doc(db, "rooms", activeRoomCode), {
-    status: "review",
-    questionEndsAt: null
-  });
+  if (autoTransitionLock) return;
+  autoTransitionLock = true;
+  try {
+    await updateDoc(doc(db, "rooms", activeRoomCode), {
+      status: "review",
+      questionEndsAt: null
+    });
+  } finally {
+    autoTransitionLock = false;
+  }
 }
 
 async function nextQuestion() {
@@ -174,16 +336,18 @@ async function nextQuestion() {
     });
     return;
   }
-  autoRevealLock = false;
+  const settings = getActiveSettings();
+  autoTransitionLock = false;
   await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "question",
     questionIndex: nextIndex,
-    questionEndsAt: Date.now() + QUESTION_DURATION_MS
+    questionEndsAt: Date.now() + settings.questionDurationSec * 1000
   });
 }
 
 async function closeRoom() {
   window.clearInterval(timerInterval);
+  window.GameConfetti?.stop();
   const codeToClose = activeRoomCode;
   cleanupListeners();
   activeRoomCode = null;
@@ -195,50 +359,71 @@ async function closeRoom() {
     try {
       await updateDoc(doc(db, "rooms", codeToClose), {
         status: "closed",
-        questionEndsAt: null
+        questionEndsAt: null,
+        lobbyEndsAt: null,
+        countdownEndsAt: null
       });
     } catch {
-      // Ignora caso a sala já tenha sido encerrada
+      // Ignora caso já tenha sido encerrada
     }
   }
 
-  void window.GameAudio.setEnabled(false);
-  updateAudioButton();
+  window.GameAudio?.setTrack("none");
   renderWelcomeScreen();
 }
 
 function renderWelcomeScreen() {
   window.clearInterval(timerInterval);
+  topbarPhaseLabel.textContent = "ARENA INTERATIVA · PRONTA";
+  const cfg = draftSettings;
+
   gameContent.innerHTML = `
     <div class="game-screen game-welcome-screen">
       <p class="eyebrow">ATIVIDADE INTERATIVA EM TEMPO REAL</p>
       <h1>Desafio<br /><span class="accent">Relâmpago.</span></h1>
       <p class="welcome-copy">
-        Abra uma sala para gerar o QR Code na tela. Os participantes podem escanear de qualquer celular e rede para entrar e responder ao vivo.
+        Configure os parâmetros da partida, abra uma sala e projete o QR Code. Os participantes entram pelo celular em tempo real e disputam o pódio.
       </p>
-      <button type="button" class="primary-cta" id="welcomeOpenRoom">
-        Abrir sala do desafio <span>→</span>
-      </button>
+      <div class="welcome-settings-summary">
+        <span class="summary-pill">Até ${cfg.maxPlayers} jogadores</span>
+        <span class="summary-pill">${cfg.questionDurationSec}s por pergunta</span>
+        <span class="summary-pill">Contagem: ${cfg.countdownSeconds}s</span>
+        <span class="summary-pill">${cfg.lobbyWaitSeconds > 0 ? `Espera: ${cfg.lobbyWaitSeconds}s` : "Início manual"}</span>
+      </div>
+      <div class="welcome-cta-group">
+        <button type="button" class="primary-cta" id="welcomeOpenRoom">
+          <span>Abrir sala do desafio</span>
+          <span aria-hidden="true">→</span>
+        </button>
+        <button type="button" class="secondary-cta" id="welcomeConfigureBtn">
+          <span>Configurar partida</span>
+        </button>
+      </div>
     </div>
   `;
-  hostStatus.textContent = "Nenhuma sala ativa no momento.";
+
+  hostStatus.textContent = "Pronto para configurar ou abrir uma nova sala.";
   hostActions.innerHTML = `
+    <button type="button" class="host-btn" id="barConfigureBtn">Configurações</button>
     <button type="button" class="host-btn host-btn-primary" id="barOpenRoom">Abrir nova sala</button>
   `;
+
   document.querySelector("#welcomeOpenRoom")?.addEventListener("click", openNewRoom);
   document.querySelector("#barOpenRoom")?.addEventListener("click", openNewRoom);
+  document.querySelector("#welcomeConfigureBtn")?.addEventListener("click", openSettingsModal);
+  document.querySelector("#barConfigureBtn")?.addEventListener("click", openSettingsModal);
 }
 
-function renderStandings(players) {
-  const top = players.slice(0, 5);
-  if (!top.length) {
-    return `<p class="game-empty">A classificação aparece aqui quando a rodada começar.</p>`;
+function renderStandings(players, startRank = 1, maxItems = 8) {
+  const slice = players.slice(0, maxItems);
+  if (!slice.length) {
+    return `<p class="game-waiting-chips">A classificação aparece aqui quando a rodada começar.</p>`;
   }
   return `
     <ol class="game-standings">
-      ${top.map((player, idx) => `
+      ${slice.map((player, idx) => `
         <li>
-          <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
+          <span class="game-rank">${String(startRank + idx).padStart(2, "0")}</span>
           ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
           <b>${escapeHTML(player.name)}</b>
           <strong>${player.score.toLocaleString("pt-BR")} pts</strong>
@@ -248,11 +433,73 @@ function renderStandings(players) {
   `;
 }
 
+function renderPodium(players) {
+  if (!players.length) {
+    return `<p class="game-waiting-chips">Nenhum participante registrado nesta partida.</p>`;
+  }
+
+  const first = players[0] || null;
+  const second = players[1] || null;
+  const third = players[2] || null;
+
+  const slots = [];
+  if (second) slots.push({ place: 2, cls: "podium-slot-second", player: second });
+  if (first) slots.push({ place: 1, cls: "podium-slot-first", player: first });
+  if (third) slots.push({ place: 3, cls: "podium-slot-third", player: third });
+
+  return `
+    <div class="podium-arena" aria-label="Pódio dos vencedores">
+      ${slots.map((slot) => `
+        <div class="podium-slot ${slot.cls}">
+          <div class="podium-player-card">
+            ${slot.place === 1 ? `<span class="podium-champion-tag">CAMPEÃO</span>` : ""}
+            <div class="podium-avatar-wrap">
+              ${window.GameAvatar.render(slot.player.avatar, "game-avatar podium-avatar")}
+            </div>
+            <div class="podium-name" title="${escapeHTML(slot.player.name)}">${escapeHTML(slot.player.name)}</div>
+            <div class="podium-score">${slot.player.score.toLocaleString("pt-BR")} pts</div>
+          </div>
+          <div class="podium-pedestal">
+            <span class="podium-place-num">${slot.place}º</span>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function handleAudioState(game) {
+  const key = `${game.status}:${game.questionIndex}`;
+  if (key === lastHostSoundKey) return;
+  lastHostSoundKey = key;
+
+  if (game.status === "lobby") {
+    window.GameAudio?.setTrack("lobby");
+  } else if (game.status === "countdown") {
+    window.GameAudio?.setTrack("countdown");
+  } else if (game.status === "question") {
+    if (Number(game.questionIndex) === 0) {
+      window.GameAudio?.playEffect("start");
+    }
+    window.GameAudio?.setTrack("question");
+  } else if (game.status === "review") {
+    window.GameAudio?.setTrack("review");
+  } else if (game.status === "final") {
+    window.GameAudio?.setTrack("victory");
+    window.GameAudio?.playEffect("champion");
+    window.GameConfetti?.burst();
+  }
+}
+
 function renderGame(game, players) {
   window.clearInterval(timerInterval);
+  const settings = getActiveSettings();
+  handleAudioState(game);
+
   const joinUrl = `${window.location.origin}/play?room=${encodeURIComponent(game.roomCode)}`;
 
   if (game.status === "lobby") {
+    topbarPhaseLabel.textContent = `SALA ${game.roomCode} · AGUARDANDO ENTRADAS`;
     let qrSvg = "";
     try {
       qrSvg = window.qrCodeSvg(joinUrl);
@@ -260,29 +507,36 @@ function renderGame(game, players) {
       qrSvg = `<div class="qr-fallback">${escapeHTML(joinUrl)}</div>`;
     }
 
+    const canStart = players.length >= settings.minPlayers;
+
     gameContent.innerHTML = `
       <div class="game-screen game-lobby-screen">
         <header class="game-screen-heading">
           <span>CONEXÃO · DESAFIO RELÂMPAGO</span>
-          <strong>CADASTRO SEGURO</strong>
+          <strong>${settings.allowLateJoin ? "ENTRADA ABERTA" : "BLOQUEIA APÓS INÍCIO"}</strong>
         </header>
-        <h2>Entre no desafio</h2>
+        <h2>Entre na sala</h2>
         <p class="game-screen-subtitle">
-          Aponte a câmera do celular para o QR code ou acesse o endereço abaixo e escolha um apelido.
+          Escaneie o QR Code pelo celular ou acesse o endereço abaixo e digite o código da sala.
         </p>
+
         <div class="game-lobby-layout">
           <div class="game-qr-frame">${qrSvg}</div>
           <div class="game-room-info">
             <span>CÓDIGO DA SALA</span>
             <strong class="game-room-code">${escapeHTML(game.roomCode)}</strong>
-            <span class="game-url-label">ENDEREÇO DIRETO</span>
+            <span class="game-url-label">ENDEREÇO DE ACESSO</span>
             <div class="game-url-row">
               <code class="game-join-url">${escapeHTML(joinUrl)}</code>
               <button type="button" class="copy-link-btn" id="copyJoinUrl">Copiar link</button>
             </div>
-            <span class="game-player-counter">${players.length} ${players.length === 1 ? "participante na sala" : "participantes na sala"}</span>
+            <div class="lobby-metrics-bar">
+              <span class="game-player-counter">${players.length} / ${settings.maxPlayers} participante(s)</span>
+              ${game.lobbyEndsAt ? `<span class="lobby-wait-badge" id="lobbyWaitTimer">Início em --s</span>` : ""}
+            </div>
           </div>
         </div>
+
         <div class="game-player-list">
           ${players.length
             ? players.map((p) => `
@@ -291,7 +545,7 @@ function renderGame(game, players) {
                   <span>${escapeHTML(p.name)}</span>
                 </span>
               `).join("")
-            : `<span class="game-waiting-chips">Aguardando participantes entrarem...</span>`
+            : `<span class="game-waiting-chips">Aguardando participantes entrarem (mínimo: ${settings.minPlayers})...</span>`
           }
         </div>
         <p class="game-privacy-note">Use apenas um apelido. Não informe nome completo, telefone, senha ou documento.</p>
@@ -302,20 +556,87 @@ function renderGame(game, players) {
       try {
         await navigator.clipboard.writeText(joinUrl);
         e.currentTarget.textContent = "Copiado!";
-        setTimeout(() => { e.target && (e.target.textContent = "Copiar link"); }, 2000);
+        setTimeout(() => { if (e.target) e.target.textContent = "Copiar link"; }, 2000);
       } catch {
         hostStatus.textContent = `Link da sala: ${joinUrl}`;
       }
     });
 
-    hostStatus.textContent = `Sala ${game.roomCode} aberta · ${players.length} participante(s).`;
+    if (game.lobbyEndsAt) {
+      const updateLobbyTimer = () => {
+        const remaining = Math.max(0, game.lobbyEndsAt - Date.now());
+        const sec = Math.ceil(remaining / 1000);
+        const badge = gameContent.querySelector("#lobbyWaitTimer");
+        if (badge) {
+          badge.textContent = sec > 0 ? `Tempo de espera: ${sec}s` : "Tempo de espera encerrado";
+        }
+        if (remaining === 0 && !autoTransitionLock) {
+          if (settings.autoStart && currentPlayers.length >= settings.minPlayers) {
+            void beginCountdown();
+          } else if (currentPlayers.length < settings.minPlayers) {
+            hostStatus.textContent = `Tempo de espera encerrado, mas faltam participantes (mínimo ${settings.minPlayers}).`;
+          }
+        }
+      };
+      updateLobbyTimer();
+      timerInterval = window.setInterval(updateLobbyTimer, 250);
+    }
+
+    hostStatus.textContent = `Sala ${game.roomCode} aberta · ${players.length}/${settings.maxPlayers} participante(s).`;
     hostActions.innerHTML = `
-      <button type="button" class="host-btn host-btn-primary" id="btnStart" ${players.length === 0 ? "disabled" : ""}>
-        Iniciar desafio (${GAME_QUESTIONS.length} perguntas)
+      <button type="button" class="host-btn" id="btnLobbyConfig">Configurar</button>
+      <button type="button" class="host-btn host-btn-primary" id="btnStart" ${canStart ? "" : "disabled"}>
+        Iniciar contagem (${settings.countdownSeconds}s)
       </button>
       <button type="button" class="host-btn host-btn-danger" id="btnClose">Encerrar sala</button>
     `;
-    document.querySelector("#btnStart")?.addEventListener("click", startChallenge);
+    document.querySelector("#btnLobbyConfig")?.addEventListener("click", openSettingsModal);
+    document.querySelector("#btnStart")?.addEventListener("click", beginCountdown);
+    document.querySelector("#btnClose")?.addEventListener("click", closeRoom);
+    return;
+  }
+
+  if (game.status === "countdown") {
+    topbarPhaseLabel.textContent = `SALA ${game.roomCode} · PREPARANDO PARTIDA`;
+    const initialSec = Math.max(1, Math.ceil(((game.countdownEndsAt || Date.now()) - Date.now()) / 1000));
+
+    gameContent.innerHTML = `
+      <div class="game-screen game-countdown-screen">
+        <p class="eyebrow">PREPARE-SE · A PARTIDA VAI COMEÇAR</p>
+        <h2>Atenção ao telão e ao celular</h2>
+        <div class="countdown-ring">
+          <span class="countdown-number" id="hostCountdownNum">${initialSec}</span>
+        </div>
+        <p class="game-screen-subtitle">${players.length} participante(s) na disputa · ${GAME_QUESTIONS.length} perguntas</p>
+      </div>
+    `;
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, (game.countdownEndsAt || Date.now()) - Date.now());
+      const sec = Math.ceil(remaining / 1000);
+      const numEl = gameContent.querySelector("#hostCountdownNum");
+      if (numEl) numEl.textContent = sec > 0 ? String(sec) : "VAI!";
+
+      if (sec > 0 && sec !== lastCountdownTick) {
+        lastCountdownTick = sec;
+        window.GameAudio?.playEffect("countdownTick");
+      }
+
+      if (remaining === 0 && !autoTransitionLock) {
+        window.GameAudio?.playEffect("countdownGo");
+        void launchFirstQuestion();
+      }
+    };
+
+    updateCountdown();
+    timerInterval = window.setInterval(updateCountdown, 150);
+
+    hostStatus.textContent = `Contagem regressiva em andamento...`;
+    hostActions.innerHTML = `
+      <button type="button" class="host-btn host-btn-primary" id="btnSkipCountdown">Começar agora</button>
+      <button type="button" class="host-btn host-btn-danger" id="btnClose">Encerrar sala</button>
+    `;
+    document.querySelector("#btnSkipCountdown")?.addEventListener("click", launchFirstQuestion);
     document.querySelector("#btnClose")?.addEventListener("click", closeRoom);
     return;
   }
@@ -323,13 +644,15 @@ function renderGame(game, players) {
   const qIndex = Number(game.questionIndex);
   const qKey = String(qIndex);
   const question = GAME_QUESTIONS[qIndex];
+  const durationMs = settings.questionDurationSec * 1000;
 
   if ((game.status === "question" || game.status === "review") && question) {
     const isQuestion = game.status === "question";
     const isReview = game.status === "review";
     const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
+    topbarPhaseLabel.textContent = `SALA ${game.roomCode} · PERGUNTA ${qIndex + 1} DE ${GAME_QUESTIONS.length}`;
 
-    if (isQuestion && players.length > 0 && answeredCount >= players.length && !autoRevealLock) {
+    if (isQuestion && players.length > 0 && answeredCount >= players.length && !autoTransitionLock) {
       void revealAnswer();
       return;
     }
@@ -346,7 +669,7 @@ function renderGame(game, players) {
         </div>
         <h2>${escapeHTML(question.prompt)}</h2>
         ${isQuestion
-          ? `<div class="game-timer-row"><span class="game-timer" id="gameTimer">20</span><div class="game-timer-track"><i class="game-timer-fill" id="gameTimerFill"></i></div></div>`
+          ? `<div class="game-timer-row"><span class="game-timer" id="gameTimer">${settings.questionDurationSec}</span><div class="game-timer-track"><i class="game-timer-fill" id="gameTimerFill"></i></div></div>`
           : ""
         }
         <div class="game-projector-answers">
@@ -359,16 +682,16 @@ function renderGame(game, players) {
         </div>
         ${isReview ? `
           <div class="game-explanation-box">
-            <b>POR QUE ESTA É A MAIS SEGURA?</b>
+            <b>EXPLICAÇÃO</b>
             <span>${escapeHTML(question.explanation)}</span>
           </div>
           <div class="game-live-score">
-            <span>PLACAR ATUAL</span>
-            ${renderStandings(players)}
+            <span>CLASSIFICAÇÃO PARCIAL</span>
+            ${renderStandings(players, 1, 5)}
           </div>
         ` : ""}
         <p class="game-screen-foot">
-          ${isQuestion ? "Responda no seu celular antes do tempo acabar." : "Confira a explicação e avance para a próxima rodada."}
+          ${isQuestion ? "Responda no seu celular antes do tempo acabar." : "Confira a resposta correta e avance para a próxima rodada."}
         </p>
       </div>
     `;
@@ -376,12 +699,26 @@ function renderGame(game, players) {
     if (isQuestion && game.questionEndsAt) {
       const updateTimer = () => {
         const remaining = Math.max(0, game.questionEndsAt - Date.now());
+        const sec = Math.ceil(remaining / 1000);
         const timerEl = gameContent.querySelector("#gameTimer");
         const fillEl = gameContent.querySelector("#gameTimerFill");
-        if (timerEl) timerEl.textContent = String(Math.ceil(remaining / 1000)).padStart(2, "0");
-        if (fillEl) fillEl.style.width = `${(remaining / QUESTION_DURATION_MS) * 100}%`;
-        if (remaining === 0 && !autoRevealLock) {
-          void revealAnswer();
+        if (timerEl) {
+          timerEl.textContent = String(sec).padStart(2, "0");
+          timerEl.classList.toggle("is-urgent", sec <= 5);
+        }
+        if (fillEl) {
+          fillEl.style.width = `${(remaining / durationMs) * 100}%`;
+          fillEl.classList.toggle("is-urgent", sec <= 5);
+        }
+        if (remaining === 0) {
+          const timeoutKey = `${game.roomCode}:${qIndex}`;
+          if (timeoutSoundPlayedFor !== timeoutKey) {
+            timeoutSoundPlayedFor = timeoutKey;
+            window.GameAudio?.playEffect("timeout");
+          }
+          if (!autoTransitionLock) {
+            void revealAnswer();
+          }
         }
       };
       updateTimer();
@@ -399,7 +736,7 @@ function renderGame(game, players) {
       `
       : `
         <button type="button" class="host-btn host-btn-primary" id="btnNext">
-          ${qIndex === GAME_QUESTIONS.length - 1 ? "Ver resultado final" : "Próxima pergunta →"}
+          ${qIndex === GAME_QUESTIONS.length - 1 ? "Ver pódio final →" : "Próxima pergunta →"}
         </button>
         <button type="button" class="host-btn host-btn-danger" id="btnClose">Encerrar sala</button>
       `;
@@ -410,56 +747,137 @@ function renderGame(game, players) {
     return;
   }
 
-  const winner = players[0];
-  const tiedWinners = winner ? players.filter((p) => p.score === winner.score) : [];
-  const winnerTitle = !winner
-    ? "Sem pontuações"
-    : tiedWinners.length > 1
-      ? `Empate: ${tiedWinners.map((p) => p.name).join(" & ")}`
-      : winner.name;
+  // Tela de Encerramento e Pódio
+  topbarPhaseLabel.textContent = `SALA ${game.roomCode} · PÓDIO FINAL`;
+  const remainingPlayers = players.slice(3);
 
   gameContent.innerHTML = `
     <div class="game-screen game-final-screen">
       <header class="game-screen-heading">
         <span>DESAFIO RELÂMPAGO · RESULTADO FINAL</span>
-        <strong>PARABÉNS!</strong>
+        <strong>PARTIDA CONCLUÍDA</strong>
       </header>
-      <div class="game-podium-hero">
-        ${winner ? window.GameAvatar.render(winner.avatar, "game-avatar game-avatar-projector-winner") : ""}
-        <div class="game-winner-crown">✦ ${tiedWinners.length > 1 ? "EMPATE NO TOPO" : "CAMPEÃO DO DESAFIO"}</div>
-        <h2>${escapeHTML(winnerTitle)}</h2>
-        ${winner ? `<strong class="game-winner-score">${winner.score.toLocaleString("pt-BR")} PONTOS</strong>` : ""}
-      </div>
-      <div class="game-final-standings">
-        <span>CLASSIFICAÇÃO FINAL</span>
-        ${renderStandings(players)}
-      </div>
-      <p class="game-screen-foot">Cada resposta correta valeu pontos extras pela rapidez. Obrigado por jogar!</p>
+      <h2>Pódio dos Vencedores</h2>
+      ${renderPodium(players)}
+      ${remainingPlayers.length > 0 ? `
+        <div class="game-final-standings">
+          <span>DEMAIS PARTICIPANTES</span>
+          ${renderStandings(remainingPlayers, 4, 15)}
+        </div>
+      ` : ""}
+      <p class="game-screen-foot">Pontuação calculada por acertos e velocidade de resposta.</p>
     </div>
   `;
 
-  hostStatus.textContent = "Desafio concluído!";
+  hostStatus.textContent = "Desafio concluído! Pódio exibido.";
   hostActions.innerHTML = `
+    <button type="button" class="host-btn" id="btnCelebrationAgain">Repetir confetes</button>
     <button type="button" class="host-btn host-btn-primary" id="btnRestart">Abrir nova sala</button>
     <button type="button" class="host-btn host-btn-danger" id="btnClose">Encerrar</button>
   `;
+  document.querySelector("#btnCelebrationAgain")?.addEventListener("click", () => {
+    window.GameConfetti?.burst();
+    window.GameAudio?.playEffect("champion");
+  });
   document.querySelector("#btnRestart")?.addEventListener("click", openNewRoom);
   document.querySelector("#btnClose")?.addEventListener("click", closeRoom);
 }
 
-function updateAudioButton() {
-  const enabled = window.GameAudio.isEnabled();
-  audioToggle.setAttribute("aria-pressed", String(enabled));
-  audioToggle.querySelector("span").textContent = enabled ? "♫ Som ligado" : "♫ Som desligado";
+// Controles de Áudio
+function initAudioControls() {
+  const prefs = window.GameAudio.getPrefs();
+  musicVolumeSlider.value = String(Math.round(prefs.musicVolume * 100));
+  musicVolumeValue.textContent = `${musicVolumeSlider.value}%`;
+  sfxVolumeSlider.value = String(Math.round(prefs.sfxVolume * 100));
+  sfxVolumeValue.textContent = `${sfxVolumeSlider.value}%`;
+
+  audioToggle.addEventListener("click", async () => {
+    try {
+      const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
+      audioToggle.setAttribute("aria-pressed", String(enabled));
+      audioToggleLabel.textContent = enabled ? "Som ligado" : "Som desligado";
+      if (enabled && currentGame) {
+        lastHostSoundKey = "";
+        handleAudioState(currentGame);
+      }
+    } catch (err) {
+      hostStatus.textContent = `Áudio indisponível: ${err.message}`;
+    }
+  });
+
+  audioMixerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = audioPopover.hidden;
+    audioPopover.hidden = !open;
+    audioMixerBtn.setAttribute("aria-expanded", String(open));
+  });
+
+  musicVolumeSlider.addEventListener("input", () => {
+    musicVolumeValue.textContent = `${musicVolumeSlider.value}%`;
+    window.GameAudio.setMusicVolume(Number(musicVolumeSlider.value) / 100);
+  });
+
+  sfxVolumeSlider.addEventListener("input", () => {
+    sfxVolumeValue.textContent = `${sfxVolumeSlider.value}%`;
+    window.GameAudio.setSfxVolume(Number(sfxVolumeSlider.value) / 100);
+  });
+
+  audioTestBtn.addEventListener("click", async () => {
+    if (!window.GameAudio.isEnabled()) {
+      await window.GameAudio.setEnabled(true);
+      audioToggle.setAttribute("aria-pressed", "true");
+      audioToggleLabel.textContent = "Som ligado";
+    }
+    window.GameAudio.playEffect("correct");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!audioPopover.hidden && !e.target.closest(".audio-control-wrap")) {
+      audioPopover.hidden = true;
+      audioMixerBtn.setAttribute("aria-expanded", "false");
+    }
+  });
 }
 
-audioToggle.addEventListener("click", async () => {
+// Eventos de Configurações
+settingsToggleBtn.addEventListener("click", openSettingsModal);
+closeSettingsBtn.addEventListener("click", closeSettingsModal);
+settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) closeSettingsModal();
+});
+
+resetSettingsBtn.addEventListener("click", () => {
+  syncSettingsForm(DEFAULT_SETTINGS);
+});
+
+matchSettingsForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const updated = readSettingsForm();
+  draftSettings = updated;
   try {
-    await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
-    updateAudioButton();
-  } catch (err) {
-    hostStatus.textContent = `Áudio indisponível: ${err.message}`;
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Ignora
   }
+
+  if (activeRoomCode && currentGame && currentGame.status === "lobby") {
+    try {
+      const lobbyEndsAt = updated.lobbyWaitSeconds > 0
+        ? Date.now() + updated.lobbyWaitSeconds * 1000
+        : null;
+      await updateDoc(doc(db, "rooms", activeRoomCode), {
+        settings: updated,
+        lobbyEndsAt
+      });
+      hostStatus.textContent = "Configurações da sala atualizadas em tempo real.";
+    } catch (error) {
+      hostStatus.textContent = `Erro ao salvar configurações na sala: ${error.message}`;
+    }
+  } else {
+    renderWelcomeScreen();
+    hostStatus.textContent = "Configurações salvas para a próxima sala.";
+  }
+  closeSettingsModal();
 });
 
 fullscreenToggle.addEventListener("click", () => {
@@ -471,11 +889,14 @@ fullscreenToggle.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key.toLowerCase() === "f" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
+  if (event.key.toLowerCase() === "f" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
     fullscreenToggle.click();
+  } else if (event.key === "Escape" && !settingsModal.hidden) {
+    closeSettingsModal();
   }
 });
 
+initAudioControls();
 if (activeRoomCode) {
   subscribeToRoom(activeRoomCode);
 } else {
