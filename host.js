@@ -1,14 +1,15 @@
 import { db } from "./firebase-config.js";
 import { GAME_QUESTIONS } from "./questions.js";
 import {
+  db,
   doc,
   collection,
   getDoc,
   setDoc,
   updateDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-
+} from "./firebase-config.js";
+import { GAME_QUESTIONS } from "./questions.js";
 const SETTINGS_STORAGE_KEY = "conexao-host-settings-v1";
 
 const DEFAULT_SETTINGS = {

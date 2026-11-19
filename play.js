@@ -1,6 +1,7 @@
 import { db } from "./firebase-config.js";
 import { GAME_QUESTIONS } from "./questions.js";
 import {
+  db,
   doc,
   collection,
   getDoc,
@@ -8,7 +9,8 @@ import {
   addDoc,
   updateDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+} from "./firebase-config.js";
+import { GAME_QUESTIONS } from "./questions.js";
 
 const HISTORY_STORAGE_KEY = "conexao-player-history-v1";
 
