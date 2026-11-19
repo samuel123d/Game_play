@@ -3,70 +3,188 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#080a18" />
-    <meta name="description" content="Participe do desafio educativo de cadastro online seguro." />
-    <title>Desafio relâmpago · Conexão</title>
+    <meta name="theme-color" content="#090c15" />
+    <meta name="description" content="Participe do Desafio Relâmpago em tempo real." />
+    <title>Desafio Relâmpago · Participante</title>
     <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./play.css" />
   </head>
   <body>
+    <canvas id="confettiCanvas" class="confetti-canvas" aria-hidden="true"></canvas>
+
     <main class="player-shell">
       <header class="player-header">
         <a href="./" class="player-brand">CONEXÃO<span>.</span></a>
-        <button class="player-audio-toggle" id="playerAudioToggle" type="button" aria-pressed="false">♫ Som desligado</button>
-        <span class="player-connection" id="playerConnection">FORA DA SALA</span>
+
+        <div class="player-header-actions">
+          <div class="audio-control-wrap">
+            <button class="player-pill-btn" id="playerAudioToggle" type="button" aria-pressed="false">
+              <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <span id="playerAudioLabel">Som</span>
+            </button>
+            <button
+              class="player-pill-btn player-pill-icon"
+              id="playerAudioMixerBtn"
+              type="button"
+              title="Ajustar volumes"
+              aria-label="Ajustar volumes"
+              aria-expanded="false"
+              aria-controls="playerAudioPopover"
+            >
+              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <line x1="4" y1="21" x2="4" y2="14" />
+                <line x1="4" y1="10" x2="4" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12" y2="3" />
+                <line x1="20" y1="21" x2="20" y2="16" />
+                <line x1="20" y1="12" x2="20" y2="3" />
+                <line x1="1" y1="14" x2="7" y2="14" />
+                <line x1="9" y1="8" x2="15" y2="8" />
+                <line x1="17" y1="16" x2="23" y2="16" />
+              </svg>
+            </button>
+
+            <div class="audio-popover" id="playerAudioPopover" hidden>
+              <div class="audio-popover-head">
+                <span>ÁUDIO DO JOGO</span>
+                <button type="button" class="text-link-btn" id="playerAudioTestBtn">Testar</button>
+              </div>
+              <label class="volume-row" for="playerMusicSlider">
+                <span>Música</span>
+                <output id="playerMusicVal">65%</output>
+                <input id="playerMusicSlider" type="range" min="0" max="100" value="65" />
+              </label>
+              <label class="volume-row" for="playerSfxSlider">
+                <span>Efeitos</span>
+                <output id="playerSfxVal">85%</output>
+                <input id="playerSfxSlider" type="range" min="0" max="100" value="85" />
+              </label>
+            </div>
+          </div>
+
+          <span class="player-connection" id="playerConnection">OFFLINE</span>
+        </div>
       </header>
 
       <section class="player-join" id="playerJoin">
-        <p class="player-eyebrow">JOGO EDUCATIVO · CADASTRO SEGURO</p>
+        <p class="player-eyebrow">ATIVIDADE INTERATIVA · ENTRADA SEGURA</p>
         <h1>Entre no<br /><span>desafio.</span></h1>
-        <p class="player-intro">Use um apelido inventado. Não informe nome completo, telefone, senha, documento ou qualquer dado pessoal.</p>
-        <form id="playerJoinForm">
-          <label for="playerRoomCode">CÓDIGO DA SALA</label>
-          <input id="playerRoomCode" name="roomCode" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="off" placeholder="00000" required />
-          <label for="playerName">SEU APELIDO</label>
-          <input id="playerName" name="name" type="text" minlength="2" maxlength="20" autocomplete="off" placeholder="Ex.: Nuvem Azul" required />
+        <p class="player-intro">
+          Digite o código exibido no telão e escolha um apelido. Não informe nome completo, telefone, senha ou documento.
+        </p>
+
+        <form id="playerJoinForm" novalidate>
+          <div class="join-fields-row">
+            <div class="join-field-code">
+              <label for="playerRoomCode">CÓDIGO DA SALA</label>
+              <input
+                id="playerRoomCode"
+                name="roomCode"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]{5}"
+                maxlength="5"
+                autocomplete="off"
+                placeholder="00000"
+                required
+              />
+            </div>
+            <div class="join-field-name">
+              <label for="playerName">SEU APELIDO</label>
+              <input
+                id="playerName"
+                name="name"
+                type="text"
+                minlength="2"
+                maxlength="20"
+                autocomplete="off"
+                placeholder="Ex.: Nuvem Azul"
+                required
+              />
+            </div>
+          </div>
+
           <section class="avatar-creator" aria-labelledby="avatarCreatorTitle">
             <div class="avatar-creator-heading">
-              <div><span>PERSONALIZE</span><h2 id="avatarCreatorTitle">Seu avatar do jogo</h2></div>
-              <div id="avatarPreview" aria-live="polite"></div>
+              <div>
+                <span>PERSONALIZE</span>
+                <h2 id="avatarCreatorTitle">Seu avatar</h2>
+              </div>
+              <div class="avatar-preview-ring" id="avatarPreview" aria-live="polite"></div>
             </div>
             <div class="avatar-fields">
-              <label for="avatarSkin">TOM DE PELE
+              <label for="avatarSkin">
+                TOM DE PELE
                 <select id="avatarSkin" data-avatar-field="skin">
-                  <option value="light">Claro</option><option value="medium" selected>Médio</option><option value="tan">Moreno</option><option value="dark">Escuro</option>
+                  <option value="light">Claro</option>
+                  <option value="medium" selected>Médio</option>
+                  <option value="tan">Moreno</option>
+                  <option value="dark">Escuro</option>
                 </select>
               </label>
-              <label for="avatarHair">CABELO
+              <label for="avatarHair">
+                CABELO
                 <select id="avatarHair" data-avatar-field="hair">
-                  <option value="short" selected>Curto</option><option value="long">Longo</option><option value="curly">Cacheado</option><option value="bun">Coque</option>
+                  <option value="short" selected>Curto</option>
+                  <option value="long">Longo</option>
+                  <option value="curly">Cacheado</option>
+                  <option value="bun">Coque</option>
                 </select>
               </label>
-              <label for="avatarHairColor">COR DO CABELO
+              <label for="avatarHairColor">
+                COR DO CABELO
                 <select id="avatarHairColor" data-avatar-field="hairColor">
-                  <option value="brown" selected>Castanho</option><option value="black">Preto</option><option value="blonde">Loiro</option><option value="blue">Azul</option><option value="pink">Rosa</option>
+                  <option value="brown" selected>Castanho</option>
+                  <option value="black">Preto</option>
+                  <option value="blonde">Loiro</option>
+                  <option value="blue">Azul</option>
+                  <option value="pink">Rosa</option>
                 </select>
               </label>
-              <label for="avatarAccessory">ACESSÓRIO
+              <label for="avatarAccessory">
+                ACESSÓRIO
                 <select id="avatarAccessory" data-avatar-field="accessory">
-                  <option value="none" selected>Nenhum</option><option value="glasses">Óculos</option><option value="crown">Coroa</option><option value="headphones">Fone</option><option value="cap">Boné</option>
+                  <option value="none" selected>Nenhum</option>
+                  <option value="glasses">Óculos</option>
+                  <option value="crown">Coroa</option>
+                  <option value="headphones">Fone</option>
+                  <option value="cap">Boné</option>
                 </select>
               </label>
             </div>
-            <p>Seu avatar é uma ilustração. Não use foto ou informação pessoal.</p>
           </section>
-          <button type="submit" id="joinButton">Entrar na sala <span>→</span></button>
+
+          <button type="submit" id="joinButton" class="primary-submit-btn">
+            <span>Entrar na sala</span>
+            <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </button>
           <p class="player-error" id="playerJoinError" role="alert"></p>
         </form>
-        <p class="player-privacy">Esta atividade usa apenas um apelido temporário. Nenhum cadastro é salvo ou enviado a serviços externos.</p>
+
+        <p class="player-privacy">Participação anônima por apelido. Nenhum dado pessoal é coletado.</p>
       </section>
 
       <section class="player-game" id="playerGame" hidden aria-live="polite">
         <div id="playerGameContent"></div>
       </section>
+
       <p class="player-status" id="playerStatus" role="status" aria-live="polite"></p>
     </main>
+
     <script src="./avatar.js"></script>
+    <script src="./confetti.js"></script>
     <script src="./game-audio.js"></script>
     <script type="module" src="./play.js"></script>
   </body>
