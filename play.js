@@ -20,11 +20,12 @@ const joinButton = document.querySelector("#joinButton");
 const gameSection = document.querySelector("#playerGame");
 const gameContent = document.querySelector("#playerGameContent");
 const connectionLabel = document.querySelector("#playerConnection");
+const playerAudioToggle = document.querySelector("#playerAudioToggle");
 const statusLabel = document.querySelector("#playerStatus");
 const avatarPreview = document.querySelector("#avatarPreview");
 const avatarFields = [...document.querySelectorAll("[data-avatar-field]")];
 
-const QUESTION_DURATION_MS = 20000;
+const QUESTION_DURATION_MS = 30000;
 const BASE_POINTS = 1000;
 const SPEED_BONUS_MAX = 500;
 
@@ -45,6 +46,43 @@ let pendingChoice = null;
 let burstDone = false;
 let trackedQuestionKey = "";
 let trackedQuestionStartLocal = 0;
+let lastPlayerStateSoundKey = "";
+let lastPlayerUrgentSecond = -1;
+
+function updatePlayerAudioButton() {
+  if (!window.GameAudio || !playerAudioToggle) return;
+  const enabled = window.GameAudio.isEnabled();
+  playerAudioToggle.setAttribute("aria-pressed", String(enabled));
+  playerAudioToggle.classList.toggle("is-on", enabled);
+  playerAudioToggle.classList.toggle("is-off", !enabled);
+  playerAudioToggle.innerHTML = enabled
+    ? `
+      <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"></polygon>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+      </svg>
+      <span>Som ligado</span>
+    `
+    : `
+      <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="23" y1="9" x2="17" y2="15"></line>
+        <line x1="17" y1="9" x2="23" y2="15"></line>
+      </svg>
+      <span>Som desligado</span>
+    `;
+}
+
+playerAudioToggle?.addEventListener("click", async () => {
+  if (!window.GameAudio) return;
+  const enabled = await window.GameAudio.setEnabled(!window.GameAudio.isEnabled());
+  updatePlayerAudioButton();
+  if (enabled) {
+    window.GameAudio.playEffect("select");
+  }
+});
+
+updatePlayerAudioButton();
 
 function selectedAvatar() {
   return Object.fromEntries(avatarFields.map((field) => [field.dataset.avatarField, field.value]));
@@ -86,13 +124,19 @@ function getCorrectAnswerIndex(question) {
   return -1;
 }
 
+function getQuestionDurationMs(game) {
+  const val = Number(game?.questionDurationMs);
+  return Number.isFinite(val) && val > 0 ? val : QUESTION_DURATION_MS;
+}
+
 function getRemainingMs(game) {
+  const durationMs = getQuestionDurationMs(game);
   const remoteRemaining = Number(game?.questionEndsAt || 0) - Date.now();
   if (remoteRemaining > 0) {
-    return Math.min(QUESTION_DURATION_MS, remoteRemaining);
+    return Math.min(durationMs, remoteRemaining);
   }
   if (trackedQuestionStartLocal > 0) {
-    return Math.max(0, QUESTION_DURATION_MS - (Date.now() - trackedQuestionStartLocal));
+    return Math.max(0, durationMs - (Date.now() - trackedQuestionStartLocal));
   }
   return 0;
 }
@@ -156,11 +200,13 @@ function clearSession() {
   pendingChoice = null;
   trackedQuestionKey = "";
   trackedQuestionStartLocal = 0;
+  lastPlayerStateSoundKey = "";
   burstDone = false;
   setConnected(false);
 }
 
 function exitToJoinScreen(message) {
+  window.GameAudio?.playEffect("closeRoom");
   gameSection.hidden = true;
   joinSection.hidden = false;
   window.GameConfetti?.stop();
@@ -189,6 +235,31 @@ function renderGame(game, players) {
   const question = GAME_QUESTIONS[qIndex];
   const isDouble = isDoublePointsQuestion(qIndex, question);
   const roundAnswer = currentPlayer.answers?.[qKey] || null;
+
+  const stateSoundKey = `${game.status}:${qKey}`;
+  if (stateSoundKey !== lastPlayerStateSoundKey) {
+    if (game.status === "question") {
+      lastPlayerUrgentSecond = -1;
+      if (isDouble) {
+        window.GameAudio?.playEffect("doublePointsStart");
+      } else {
+        window.GameAudio?.playEffect(qIndex === 0 ? "start" : "nextQuestion");
+      }
+    } else if (game.status === "review" && question) {
+      const correctIndex = getCorrectAnswerIndex(question);
+      const userChoice = roundAnswer ? Number(roundAnswer.choice) : null;
+      if (userChoice === null) {
+        window.GameAudio?.playEffect("timeout");
+      } else if (Boolean(roundAnswer?.correct) || userChoice === correctIndex) {
+        window.GameAudio?.playEffect("correct");
+      } else {
+        window.GameAudio?.playEffect("wrong");
+      }
+    } else if (game.status === "final") {
+      window.GameAudio?.playEffect("champion");
+    }
+    lastPlayerStateSoundKey = stateSoundKey;
+  }
 
   if (game.status === "question") {
     const stateKey = `${game.roomCode}:${qKey}:${game.questionEndsAt || 0}`;
@@ -244,9 +315,10 @@ function renderGame(game, players) {
   const ranking = renderRanking(players);
 
   if (game.status === "question" && question) {
+    const durationMs = getQuestionDurationMs(game);
     const remaining = getRemainingMs(game);
     const secs = Math.ceil(remaining / 1000);
-    const isUrgent = secs <= 5;
+    const isUrgent = secs > 0 && secs <= 5;
     const isLocked = lastChoice !== null || submitting;
 
     gameContent.innerHTML = `
@@ -260,10 +332,22 @@ function renderGame(game, players) {
         ` : ""}
         <div class="player-card-header">
           <span>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</span>
-          <span class="player-seconds-badge${isUrgent ? " is-urgent" : ""}" id="playerSeconds">${secs}s</span>
+          <span>${isDouble ? "ATÉ 3.000 PTS" : "ATÉ 1.500 PTS"}</span>
         </div>
         <h2>${escapeHTML(question.prompt)}</h2>
-        <div class="player-timer"><i id="playerTimerFill" class="${isUrgent ? "is-urgent" : ""}"></i></div>
+        <div class="player-timer-box${isUrgent ? " is-urgent" : ""}" id="playerTimerBox">
+          <div class="player-timer-top">
+            <span class="player-timer-label">
+              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 7 12 12 15 14"></polyline>
+              </svg>
+              TEMPO RESTANTE
+            </span>
+            <span class="player-seconds-badge${isUrgent ? " is-urgent" : ""}" id="playerSeconds">${String(secs).padStart(2, "0")}s</span>
+          </div>
+          <div class="player-timer"><i id="playerTimerFill" class="${isUrgent ? "is-urgent" : ""}"></i></div>
+        </div>
         <div class="player-answer-list">
           ${question.choices.map((choice, index) => {
             const isSelected = lastChoice === index;
@@ -300,15 +384,23 @@ function renderGame(game, players) {
       const secLeft = Math.ceil(msLeft / 1000);
       const urgent = secLeft > 0 && secLeft <= 5;
 
+      const timerBox = gameContent.querySelector("#playerTimerBox");
       const secondsLabel = gameContent.querySelector("#playerSeconds");
       const fill = gameContent.querySelector("#playerTimerFill");
+      if (timerBox) {
+        timerBox.classList.toggle("is-urgent", urgent);
+      }
       if (secondsLabel) {
-        secondsLabel.textContent = `${secLeft}s`;
+        secondsLabel.textContent = `${String(secLeft).padStart(2, "0")}s`;
         secondsLabel.classList.toggle("is-urgent", urgent);
       }
       if (fill) {
-        fill.style.width = `${Math.max(0, (msLeft / QUESTION_DURATION_MS) * 100)}%`;
+        fill.style.width = `${Math.max(0, Math.min(100, (msLeft / durationMs) * 100))}%`;
         fill.classList.toggle("is-urgent", urgent);
+      }
+      if (urgent && secLeft !== lastPlayerUrgentSecond && lastChoice === null) {
+        lastPlayerUrgentSecond = secLeft;
+        window.GameAudio?.playEffect("urgentTick");
       }
       if (msLeft === 0 && lastChoice === null && !submitting) {
         const feedback = gameContent.querySelector("#playerFeedback");
@@ -432,6 +524,7 @@ function renderGame(game, players) {
   `;
 
   gameContent.querySelector("#leaveRoomBtn")?.addEventListener("click", () => {
+    window.GameAudio?.playEffect("click");
     exitToJoinScreen("Pronto para entrar em uma nova sala.");
   });
 }
@@ -498,6 +591,7 @@ async function resumeGame() {
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  window.GameAudio?.playEffect("click");
   joinError.textContent = "";
   joinButton.disabled = true;
 
@@ -547,16 +641,23 @@ joinForm.addEventListener("submit", async (event) => {
 
     sessionStorage.setItem("conexao-game-player-id", playerId);
     sessionStorage.setItem("conexao-game-room", playerRoom);
+    window.GameAudio?.playEffect("join");
     showStatus("");
     subscribeToRoom(roomCode);
   } catch (error) {
+    window.GameAudio?.playEffect("wrong");
     joinError.textContent = error.message;
   } finally {
     joinButton.disabled = false;
   }
 });
 
-avatarFields.forEach((field) => field.addEventListener("change", renderAvatarPreview));
+avatarFields.forEach((field) => {
+  field.addEventListener("change", () => {
+    window.GameAudio?.playEffect("avatar");
+    renderAvatarPreview();
+  });
+});
 renderAvatarPreview();
 
 gameContent.addEventListener("click", async (event) => {
@@ -569,7 +670,10 @@ gameContent.addEventListener("click", async (event) => {
   if (!question || currentGame.status !== "question") return;
   if (currentPlayer?.answers?.[qKey] !== undefined) return;
 
+  window.GameAudio?.playEffect("select");
+
   const choice = Number(button.dataset.choice);
+  const durationMs = getQuestionDurationMs(currentGame);
   const timeLeft = getRemainingMs(currentGame);
   const multiplier = isDoublePointsQuestion(qIndex, question) ? 2 : 1;
 
@@ -580,7 +684,7 @@ gameContent.addEventListener("click", async (event) => {
   try {
     const correctIndex = getCorrectAnswerIndex(question);
     const correct = choice === correctIndex;
-    const speedBonus = Math.round((SPEED_BONUS_MAX * timeLeft) / QUESTION_DURATION_MS);
+    const speedBonus = Math.round((SPEED_BONUS_MAX * timeLeft) / durationMs);
     const pointsEarned = correct ? (BASE_POINTS + speedBonus) * multiplier : 0;
 
     const answerPayload = {
@@ -606,6 +710,7 @@ gameContent.addEventListener("click", async (event) => {
     }
   } catch (error) {
     pendingChoice = null;
+    window.GameAudio?.playEffect("wrong");
     const feedback = gameContent.querySelector("#playerFeedback");
     if (feedback) {
       feedback.textContent = `Erro ao salvar resposta: ${error.message}`;

@@ -23,7 +23,7 @@ const musicVolumeValue = document.querySelector("#musicVolumeValue");
 const sfxVolumeSlider = document.querySelector("#sfxVolumeSlider");
 const sfxVolumeValue = document.querySelector("#sfxVolumeValue");
 
-const QUESTION_DURATION_MS = 20000;
+const QUESTION_DURATION_MS = 30000;
 
 let activeRoomCode = sessionStorage.getItem("conexao-host-room") || null;
 let unsubRoom = null;
@@ -34,7 +34,7 @@ let timerInterval = 0;
 let autoRevealLock = false;
 
 let lastStateSoundKey = "";
-let lastUrgentSecond = -1;
+let lastTickSecond = -1;
 let knownPlayerCount = -1;
 let knownAnsweredKey = "";
 let knownAnsweredCount = 0;
@@ -75,6 +75,10 @@ function getCorrectAnswerIndex(question) {
   return -1;
 }
 
+function setDoubleStageTheme(active) {
+  document.body.classList.toggle("is-double-round", Boolean(active));
+}
+
 function syncMusicForStatus(status, qIndex = -1) {
   if (!window.GameAudio) return;
   if (!window.GameAudio.isEnabled()) {
@@ -101,7 +105,6 @@ function updateAudioButton() {
   audioToggle.classList.toggle("is-on", enabled);
   audioToggle.classList.toggle("is-off", !enabled);
 
-  // Atualiza texto e ícone diretamente para o estado mudar visivelmente
   audioToggle.innerHTML = enabled
     ? `
       <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -214,6 +217,7 @@ function subscribeToRoom(roomCode) {
 }
 
 async function openNewRoom() {
+  window.GameAudio?.playEffect("roomOpen");
   const buttons = [
     document.querySelector("#welcomeOpenRoom"),
     document.querySelector("#barOpenRoom"),
@@ -237,6 +241,7 @@ async function openNewRoom() {
       status: "lobby",
       questionIndex: -1,
       questionCount: GAME_QUESTIONS.length,
+      questionDurationMs: QUESTION_DURATION_MS,
       questionEndsAt: null,
       createdAt: Date.now()
     });
@@ -251,6 +256,7 @@ async function openNewRoom() {
 async function startChallenge() {
   if (!activeRoomCode || !currentGame) return;
   if (currentPlayers.length === 0) {
+    window.GameAudio?.playEffect("wrong");
     hostStatus.textContent = "Aguarde pelo menos 1 participante entrar pelo QR Code.";
     return;
   }
@@ -258,14 +264,18 @@ async function startChallenge() {
   await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "question",
     questionIndex: 0,
+    questionDurationMs: QUESTION_DURATION_MS,
     questionEndsAt: Date.now() + QUESTION_DURATION_MS
   });
 }
 
-async function revealAnswer() {
+async function revealAnswer(timedOut = false) {
   if (!activeRoomCode || !currentGame || currentGame.status !== "question") return;
   if (autoRevealLock) return;
   autoRevealLock = true;
+  if (timedOut) {
+    window.GameAudio?.playEffect("timeout");
+  }
   await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "review",
     questionEndsAt: null
@@ -286,11 +296,13 @@ async function nextQuestion() {
   await updateDoc(doc(db, "rooms", activeRoomCode), {
     status: "question",
     questionIndex: nextIndex,
+    questionDurationMs: QUESTION_DURATION_MS,
     questionEndsAt: Date.now() + QUESTION_DURATION_MS
   });
 }
 
 async function closeRoom() {
+  window.GameAudio?.playEffect("closeRoom");
   window.clearInterval(timerInterval);
   const codeToClose = activeRoomCode;
   cleanupListeners();
@@ -310,12 +322,14 @@ async function closeRoom() {
     }
   }
 
+  setDoubleStageTheme(false);
   window.GameConfetti?.stop();
   renderWelcomeScreen();
 }
 
 function renderWelcomeScreen() {
   window.clearInterval(timerInterval);
+  setDoubleStageTheme(false);
   syncMusicForStatus("welcome");
   gameContent.innerHTML = `
     <div class="game-screen game-welcome-screen anim-screen-enter">
@@ -337,22 +351,49 @@ function renderWelcomeScreen() {
   document.querySelector("#barOpenRoom")?.addEventListener("click", openNewRoom);
 }
 
-function renderStandings(players) {
+function renderStandings(players, qKey = null, isDouble = false) {
   const top = players.slice(0, 5);
   if (!top.length) {
     return `<p class="game-empty">A classificação aparece aqui quando a rodada começar.</p>`;
   }
   return `
     <ol class="game-standings">
-      ${top.map((player, idx) => `
-        <li class="anim-stagger-item" style="--stagger:${idx}">
-          <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
-          ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
-          <b>${escapeHTML(player.name)}</b>
-          <strong>${player.score.toLocaleString("pt-BR")} pts</strong>
-        </li>
-      `).join("")}
+      ${top.map((player, idx) => {
+        const roundPts = qKey !== null ? Number(player.answers?.[qKey]?.pointsEarned || 0) : 0;
+        const gainBadge = roundPts > 0
+          ? `<span class="game-round-gain${isDouble ? " is-double" : ""}">+${roundPts.toLocaleString("pt-BR")}${isDouble ? " ⚡" : ""}</span>`
+          : "";
+        return `
+          <li class="anim-stagger-item" style="--stagger:${idx}">
+            <span class="game-rank">${String(idx + 1).padStart(2, "0")}</span>
+            ${window.GameAvatar.render(player.avatar, "game-avatar game-avatar-ranking")}
+            <b>${escapeHTML(player.name)}</b>
+            ${gainBadge}
+            <strong>${player.score.toLocaleString("pt-BR")} pts</strong>
+          </li>
+        `;
+      }).join("")}
     </ol>
+  `;
+}
+
+function renderDoublePointsShowcase(isReview) {
+  return `
+    <section class="double-points-showcase${isReview ? " is-review" : ""}" role="status" aria-label="Rodada em dobro valendo 2 vezes mais pontos">
+      <div class="double-showcase-rays" aria-hidden="true"></div>
+      <div class="double-2x-medallion" aria-hidden="true">
+        <span class="double-2x-ring"></span>
+        <span class="double-2x-text">2X</span>
+      </div>
+      <div class="double-showcase-copy">
+        <span class="double-showcase-eyebrow">⚡ BÔNUS ESPECIAL · RETA FINAL</span>
+        <strong class="double-showcase-title">RODADA EM DOBRO</strong>
+      </div>
+      <div class="double-showcase-pill">
+        <span>VALE ATÉ</span>
+        <b>3.000 PTS</b>
+      </div>
+    </section>
   `;
 }
 
@@ -362,17 +403,22 @@ function renderGame(game, players) {
   const qIndex = Number(game.questionIndex);
   const question = GAME_QUESTIONS[qIndex];
   const isDouble = isDoublePointsQuestion(qIndex, question);
+  const durationMs = Number(game.questionDurationMs) || QUESTION_DURATION_MS;
+  const isDoubleActive = Boolean(isDouble && (game.status === "question" || game.status === "review"));
 
+  setDoubleStageTheme(isDoubleActive);
   syncMusicForStatus(game.status, qIndex);
+
   const stateSoundKey = `${game.status}:${qIndex}`;
   if (stateSoundKey !== lastStateSoundKey) {
     if (lastStateSoundKey) {
       if (game.status === "question") {
-        lastUrgentSecond = -1;
+        lastTickSecond = -1;
         if (isDouble) {
           window.GameAudio?.playEffect("doublePointsStart");
+          window.GameConfetti?.burst();
         } else {
-          window.GameAudio?.playEffect(qIndex === 0 ? "start" : "tick");
+          window.GameAudio?.playEffect(qIndex === 0 ? "start" : "nextQuestion");
         }
       } else if (game.status === "review") {
         window.GameAudio?.playEffect("correct");
@@ -433,6 +479,7 @@ function renderGame(game, players) {
     `;
 
     document.querySelector("#copyJoinUrl")?.addEventListener("click", async (e) => {
+      window.GameAudio?.playEffect("click");
       try {
         await navigator.clipboard.writeText(joinUrl);
         e.currentTarget.textContent = "Copiado!";
@@ -461,6 +508,7 @@ function renderGame(game, players) {
     const isReview = game.status === "review";
     const correctIndex = getCorrectAnswerIndex(question);
     const answeredCount = players.filter((p) => p.answers && p.answers[qKey] !== undefined).length;
+    const initialSecs = String(Math.round(durationMs / 1000)).padStart(2, "0");
 
     if (isQuestion) {
       if (knownAnsweredKey !== qKey) {
@@ -473,30 +521,29 @@ function renderGame(game, players) {
     }
 
     if (isQuestion && players.length > 0 && answeredCount >= players.length && !autoRevealLock) {
-      void revealAnswer();
+      void revealAnswer(false);
       return;
     }
 
     gameContent.innerHTML = `
       <div class="game-screen game-question-screen anim-screen-enter${isDouble ? " is-double-points" : ""}">
+        ${isDouble ? `
+          <div class="double-stage-particles" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        ` : ""}
         <header class="game-screen-heading">
           <span>DESAFIO RELÂMPAGO · SALA ${escapeHTML(game.roomCode)}</span>
           <strong>PERGUNTA ${String(qIndex + 1).padStart(2, "0")} / ${String(GAME_QUESTIONS.length).padStart(2, "0")}</strong>
         </header>
-        ${isDouble ? `
-          <div class="double-points-banner" role="status">
-            <span class="double-points-spark">⚡</span>
-            <strong>RODADA EM DOBRO · 2X PONTOS</strong>
-            <span class="double-points-sub">VALE ATÉ 3.000 PTS!</span>
-          </div>
-        ` : ""}
+        ${isDouble ? renderDoublePointsShowcase(isReview) : ""}
         <div class="game-question-meta">
           <span>${players.length} PARTICIPANTES</span>
           <span>${answeredCount} RESPONDERAM</span>
         </div>
         <h2>${escapeHTML(question.prompt)}</h2>
         ${isQuestion
-          ? `<div class="game-timer-row"><span class="game-timer" id="gameTimer">20</span><div class="game-timer-track"><i class="game-timer-fill" id="gameTimerFill"></i></div></div>`
+          ? `<div class="game-timer-row${isDouble ? " is-double" : ""}"><span class="game-timer" id="gameTimer">${initialSecs}</span><div class="game-timer-track"><i class="game-timer-fill" id="gameTimerFill"></i></div></div>`
           : ""
         }
         <div class="game-projector-answers">
@@ -504,6 +551,7 @@ function renderGame(game, players) {
             <div class="game-projector-answer anim-stagger-item${isReview && idx === correctIndex ? " is-correct" : ""}${isReview && idx !== correctIndex ? " is-dimmed" : ""}" style="--stagger:${idx}">
               <span>${["A", "B", "C"][idx]}</span>
               <div>${escapeHTML(choice)}</div>
+              ${isReview && idx === correctIndex && isDouble ? `<em class="double-answer-tag">2X BÔNUS</em>` : ""}
             </div>
           `).join("")}
         </div>
@@ -514,7 +562,7 @@ function renderGame(game, players) {
           </div>
           <div class="game-live-score">
             <span>PLACAR ATUAL</span>
-            ${renderStandings(players)}
+            ${renderStandings(players, qKey, isDouble)}
           </div>
         ` : ""}
         <p class="game-screen-foot">
@@ -536,17 +584,17 @@ function renderGame(game, players) {
           timerEl.classList.toggle("is-urgent", urgent);
         }
         if (fillEl) {
-          fillEl.style.width = `${(remaining / QUESTION_DURATION_MS) * 100}%`;
+          fillEl.style.width = `${Math.min(100, (remaining / durationMs) * 100)}%`;
           fillEl.classList.toggle("is-urgent", urgent);
         }
 
-        if (urgent && secLeft !== lastUrgentSecond) {
-          lastUrgentSecond = secLeft;
-          window.GameAudio?.playEffect("urgentTick");
+        if (secLeft > 0 && secLeft !== lastTickSecond) {
+          lastTickSecond = secLeft;
+          window.GameAudio?.playEffect(urgent ? "urgentTick" : "tick");
         }
 
         if (remaining === 0 && !autoRevealLock) {
-          void revealAnswer();
+          void revealAnswer(true);
         }
       };
       updateTimer();
@@ -569,7 +617,7 @@ function renderGame(game, players) {
         <button type="button" class="host-btn host-btn-danger" id="btnClose">Encerrar sala</button>
       `;
 
-    document.querySelector("#btnReveal")?.addEventListener("click", revealAnswer);
+    document.querySelector("#btnReveal")?.addEventListener("click", () => revealAnswer(false));
     document.querySelector("#btnNext")?.addEventListener("click", nextQuestion);
     document.querySelector("#btnClose")?.addEventListener("click", closeRoom);
     return;
@@ -632,6 +680,7 @@ audioToggle?.addEventListener("click", async () => {
 });
 
 audioMixerBtn?.addEventListener("click", () => {
+  window.GameAudio?.playEffect("click");
   if (!audioPopover) return;
   const willShow = audioPopover.hidden;
   audioPopover.hidden = !willShow;
@@ -669,6 +718,7 @@ audioTestBtn?.addEventListener("click", async () => {
 });
 
 fullscreenToggle?.addEventListener("click", () => {
+  window.GameAudio?.playEffect("click");
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen?.();
   } else {
@@ -689,3 +739,5 @@ if (activeRoomCode) {
 } else {
   renderWelcomeScreen();
 }
+
+

@@ -1,4 +1,4 @@
- :root {
+:root {
   color-scheme: dark;
   --night: #070917;
   --panel: #121631;
@@ -9,11 +9,20 @@
   --pink: #ff63da;
   --green: #67f3bf;
   --danger: #ff7b9c;
+  --gold: #fbbf24;
+  --gold-bright: #fde047;
+  --gold-deep: #d97706;
   font-family: "Manrope", "Segoe UI", sans-serif;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -25,10 +34,36 @@ body {
     radial-gradient(ellipse at 5% 75%, rgba(255, 66, 201, 0.1), transparent 45%),
     var(--night);
   overflow-x: hidden;
+  transition: background 0.55s ease;
 }
 
-button {
+/* Atmosfera dourada no fundo inteiro durante a Rodada em Dobro */
+body.is-double-round {
+  background:
+    radial-gradient(ellipse at 50% -8%, rgba(251, 191, 36, 0.26), transparent 56%),
+    radial-gradient(ellipse at 88% 85%, rgba(255, 99, 218, 0.14), transparent 48%),
+    radial-gradient(ellipse at 12% 85%, rgba(245, 158, 11, 0.16), transparent 48%),
+    var(--night);
+}
+
+button,
+input {
   font: inherit;
+}
+
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 80;
+}
+
+.ui-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
 }
 
 .app {
@@ -48,7 +83,7 @@ button {
   background: rgba(7, 9, 23, 0.72);
   backdrop-filter: blur(12px);
   position: relative;
-  z-index: 10;
+  z-index: 30;
 }
 
 .brand {
@@ -105,7 +140,16 @@ button {
   gap: 10px;
 }
 
-.icon-button {
+.audio-control-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button,
+#audioToggle,
+#audioMixerBtn {
   height: 36px;
   padding: 0 14px;
   border: 1px solid var(--line);
@@ -114,19 +158,87 @@ button {
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  white-space: nowrap;
+  transition: border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.12s;
 }
 
-.icon-button:hover {
+#audioMixerBtn {
+  width: 36px;
+  padding: 0;
+}
+
+.icon-button:hover,
+#audioToggle:hover,
+#audioMixerBtn:hover {
   border-color: var(--cyan);
   background: rgba(102, 244, 255, 0.08);
+  transform: translateY(-1px);
 }
 
-.icon-button[aria-pressed="true"] {
-  border-color: rgba(103, 243, 191, 0.45);
+.icon-button[aria-pressed="true"],
+#audioToggle.is-on {
+  border-color: rgba(103, 243, 191, 0.48);
   color: var(--green);
-  background: rgba(103, 243, 191, 0.09);
+  background: rgba(103, 243, 191, 0.1);
+  box-shadow: 0 0 16px rgba(103, 243, 191, 0.18);
+}
+
+#audioToggle.is-off {
+  border-color: rgba(255, 123, 156, 0.4);
+  color: var(--danger);
+  background: rgba(255, 123, 156, 0.09);
+}
+
+#audioPopover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 260px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(18, 22, 49, 0.97);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.55);
+  display: grid;
+  gap: 14px;
+  z-index: 60;
+  animation: hostScreenEnter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+#audioPopover label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font: 500 11px "DM Mono", monospace;
+  letter-spacing: 0.1em;
+}
+
+#audioPopover input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+
+#audioTestBtn {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(102, 244, 255, 0.35);
+  background: rgba(102, 244, 255, 0.1);
+  color: var(--cyan);
+  font: 600 11px "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+#audioTestBtn:hover {
+  background: rgba(102, 244, 255, 0.18);
 }
 
 .presentation {
@@ -148,6 +260,8 @@ button {
 }
 
 .stage {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   min-height: 540px;
   padding: clamp(24px, 4vw, 48px);
@@ -160,6 +274,17 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  transition: border-color 0.4s ease, box-shadow 0.4s ease, background 0.4s ease;
+}
+
+/* Palco transformado em Ouro durante a Rodada em Dobro */
+.stage:has(.is-double-points) {
+  border-color: rgba(251, 191, 36, 0.68);
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(251, 191, 36, 0.2), transparent 58%),
+    radial-gradient(ellipse at 92% 96%, rgba(255, 99, 218, 0.12), transparent 45%),
+    linear-gradient(155deg, rgba(35, 29, 44, 0.95), rgba(11, 13, 31, 0.98));
+  animation: doubleStageAura 2.4s ease-in-out infinite;
 }
 
 .eyebrow {
@@ -227,6 +352,18 @@ button {
 
 .game-screen-heading strong {
   color: var(--green);
+}
+
+.game-question-screen.is-double-points .game-screen-heading {
+  color: var(--gold-bright);
+}
+
+.game-question-screen.is-double-points .game-screen-heading strong {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: var(--gold-bright);
 }
 
 .game-lobby-screen h2,
@@ -368,6 +505,184 @@ button {
   margin-top: 16px;
 }
 
+/* =========================================================
+   VITRINE ESPECIAL DA RODADA EM DOBRO (2X PONTOS)
+   ========================================================= */
+
+.game-question-screen.is-double-points {
+  position: relative;
+}
+
+.game-question-screen.is-double-points > *:not(.double-stage-particles) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Partículas douradas flutuando pelo palco */
+.double-stage-particles {
+  position: absolute;
+  inset: -24px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.double-stage-particles i {
+  position: absolute;
+  bottom: -10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, var(--gold-bright) 45%, var(--gold) 100%);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.95);
+  opacity: 0;
+  animation: doubleFloatSpark 4.4s ease-in-out infinite;
+}
+
+.double-stage-particles i:nth-child(1) { left: 7%;  animation-delay: 0s;   animation-duration: 4.1s; }
+.double-stage-particles i:nth-child(2) { left: 19%; animation-delay: 1.1s; animation-duration: 4.9s; width: 4px; height: 4px; }
+.double-stage-particles i:nth-child(3) { left: 33%; animation-delay: 0.4s; animation-duration: 4.5s; }
+.double-stage-particles i:nth-child(4) { left: 48%; animation-delay: 1.7s; animation-duration: 3.8s; width: 8px; height: 8px; }
+.double-stage-particles i:nth-child(5) { left: 62%; animation-delay: 0.2s; animation-duration: 4.7s; width: 5px; height: 5px; }
+.double-stage-particles i:nth-child(6) { left: 75%; animation-delay: 1.4s; animation-duration: 4.0s; }
+.double-stage-particles i:nth-child(7) { left: 87%; animation-delay: 0.8s; animation-duration: 5.1s; width: 4px; height: 4px; }
+.double-stage-particles i:nth-child(8) { left: 95%; animation-delay: 2.0s; animation-duration: 4.3s; }
+
+/* Card Hero 2X */
+.double-points-showcase {
+  position: relative;
+  overflow: hidden;
+  margin: 10px 0 18px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(251, 191, 36, 0.78);
+  background: linear-gradient(
+    115deg,
+    rgba(32, 23, 18, 0.94) 0%,
+    rgba(74, 49, 16, 0.9) 48%,
+    rgba(38, 22, 42, 0.94) 100%
+  );
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.42),
+    0 0 28px rgba(251, 191, 36, 0.2),
+    inset 0 1px 0 rgba(254, 240, 138, 0.42);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  animation: doubleShowcaseEntrance 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.double-showcase-rays {
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(253, 224, 71, 0.16) 22deg,
+    transparent 45deg,
+    transparent 180deg,
+    rgba(253, 224, 71, 0.16) 202deg,
+    transparent 225deg
+  );
+  animation: doubleRaysSpin 14s linear infinite;
+  pointer-events: none;
+}
+
+.double-points-showcase::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 22%, rgba(255, 255, 255, 0.28) 50%, transparent 78%);
+  transform: translateX(-100%);
+  animation: doubleBannerShine 2.9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Medalhão Metálico 2X */
+.double-2x-medallion {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  flex: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fef08a 0%, #fbbf24 46%, #d97706 100%);
+  color: #140d02;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 6px 22px rgba(245, 158, 11, 0.55),
+    inset 0 2px 3px rgba(255, 255, 255, 0.72);
+  animation: medallionPulse 1.5s ease-in-out infinite alternate;
+}
+
+.double-2x-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 17px;
+  border: 1.5px dashed rgba(253, 224, 71, 0.82);
+  animation: doubleRaysSpin 11s linear infinite;
+}
+
+.double-2x-text {
+  font-family: "Manrope", sans-serif;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+/* Textos centrais do Card 2X */
+.double-showcase-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.double-showcase-eyebrow {
+  color: var(--gold-bright);
+  font: 600 11px "DM Mono", monospace;
+  letter-spacing: 0.15em;
+}
+
+.double-showcase-title {
+  font-size: clamp(20px, 2.6vw, 29px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  background: linear-gradient(180deg, #ffffff 12%, #fde68a 56%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(245, 158, 11, 0.4));
+}
+
+/* Selo direito de pontuação máxima */
+.double-showcase-pill {
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(10, 11, 22, 0.76);
+  border: 1px solid rgba(251, 191, 36, 0.58);
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.double-showcase-pill span {
+  color: #fcd34d;
+  font: 500 9px "DM Mono", monospace;
+  letter-spacing: 0.13em;
+}
+
+.double-showcase-pill b {
+  color: #ffffff;
+  font: 700 15px "DM Mono", monospace;
+  letter-spacing: 0.04em;
+}
+
 .game-question-meta {
   display: flex;
   gap: 18px;
@@ -375,6 +690,10 @@ button {
   color: var(--pink);
   font: 500 12px "DM Mono", monospace;
   letter-spacing: 0.12em;
+}
+
+.game-question-screen.is-double-points .game-question-meta {
+  color: #fcd34d;
 }
 
 .game-timer-row {
@@ -388,6 +707,17 @@ button {
   min-width: 48px;
   color: var(--cyan);
   font: 700 28px "DM Mono", monospace;
+  transition: color 0.2s, transform 0.2s;
+}
+
+.game-timer-row.is-double .game-timer:not(.is-urgent) {
+  color: var(--gold-bright);
+  text-shadow: 0 0 18px rgba(251, 191, 36, 0.5);
+}
+
+.game-timer.is-urgent {
+  color: var(--danger);
+  animation: urgentTimerBeat 0.5s ease-in-out infinite alternate;
 }
 
 .game-timer-track {
@@ -404,6 +734,15 @@ button {
   height: 100%;
   background: linear-gradient(90deg, var(--green), var(--cyan), var(--pink));
   transition: width 0.2s linear;
+}
+
+.game-timer-row.is-double .game-timer-fill:not(.is-urgent) {
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold), var(--gold-bright));
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.6);
+}
+
+.game-timer-fill.is-urgent {
+  background: linear-gradient(90deg, var(--danger), var(--pink));
 }
 
 .game-projector-answers {
@@ -436,6 +775,16 @@ button {
   place-items: center;
 }
 
+.game-question-screen.is-double-points .game-projector-answer:not(.is-correct):not(.is-dimmed) {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.game-question-screen.is-double-points .game-projector-answer:not(.is-correct):not(.is-dimmed) > span:first-child {
+  background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+  color: #140d02;
+}
+
 .game-projector-answer.is-correct {
   border-color: var(--green);
   background: rgba(103, 243, 191, 0.12);
@@ -448,6 +797,18 @@ button {
 
 .game-projector-answer.is-dimmed {
   opacity: 0.45;
+}
+
+.double-answer-tag {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.2);
+  border: 1px solid rgba(251, 191, 36, 0.62);
+  color: var(--gold-bright);
+  font-style: normal;
+  font: 700 11px "DM Mono", monospace;
+  letter-spacing: 0.08em;
 }
 
 .game-explanation-box {
@@ -514,6 +875,20 @@ button {
 
 .game-standings li b {
   flex: 1;
+}
+
+.game-round-gain {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(103, 243, 191, 0.14);
+  color: var(--green);
+  font: 700 12px "DM Mono", monospace;
+}
+
+.game-round-gain.is-double {
+  background: rgba(251, 191, 36, 0.2);
+  border: 1px solid rgba(251, 191, 36, 0.52);
+  color: var(--gold-bright);
 }
 
 .game-standings li strong {
@@ -601,41 +976,10 @@ button {
   color: var(--danger);
 }
 
-@media (max-width: 720px) {
-  .game-lobby-layout {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
-  }
-  .game-url-row {
-    justify-content: center;
-  }
-  .topbar-center {
-    display: none;
-  }
-}
-/* Estado visual do botão Ligar/Desligar Música */
-#audioToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
-}
+/* =========================================================
+   ANIMAÇÕES DO TELÃO
+   ========================================================= */
 
-#audioToggle.is-on {
-  background: rgba(52, 211, 153, 0.16);
-  border-color: rgba(52, 211, 153, 0.55);
-  color: #34d399;
-  box-shadow: 0 0 18px rgba(52, 211, 153, 0.22);
-}
-
-#audioToggle.is-off {
-  background: rgba(251, 113, 133, 0.12);
-  border-color: rgba(251, 113, 133, 0.38);
-  color: #fda4af;
-}
-
-/* Animações do Telão */
 .anim-screen-enter {
   animation: hostScreenEnter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -651,56 +995,6 @@ button {
 
 .anim-podium-pop {
   animation: hostPodiumPop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-/* Destaque e animação da Rodada em Dobro (2x Pontos) */
-.game-question-screen.is-double-points {
-  position: relative;
-  border-color: rgba(251, 191, 36, 0.6);
-  box-shadow: 0 0 42px rgba(251, 191, 36, 0.16), inset 0 0 36px rgba(251, 191, 36, 0.06);
-  animation: hostScreenEnter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both, doubleAuraPulse 2.2s ease-in-out infinite;
-}
-
-.double-points-banner {
-  position: relative;
-  overflow: hidden;
-  margin: 10px 0 14px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(251, 191, 36, 0.65);
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.32), rgba(251, 191, 36, 0.2));
-  color: #fde68a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  letter-spacing: 0.12em;
-  animation: doubleBannerPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-.double-points-banner::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.28) 50%, transparent 75%);
-  transform: translateX(-100%);
-  animation: doubleBannerShine 2.6s ease-in-out infinite;
-}
-
-.double-points-spark {
-  font-size: 16px;
-  animation: sparkBounce 0.9s ease-in-out infinite alternate;
-}
-
-.double-points-sub {
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #fbbf24;
-  color: #090c15;
-  font-weight: 800;
-  font-size: 11px;
 }
 
 @keyframes hostScreenEnter {
@@ -723,14 +1017,24 @@ button {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-@keyframes doubleAuraPulse {
-  0%, 100% { box-shadow: 0 0 28px rgba(251, 191, 36, 0.14), inset 0 0 24px rgba(251, 191, 36, 0.05); }
-  50% { box-shadow: 0 0 54px rgba(251, 191, 36, 0.32), inset 0 0 42px rgba(251, 191, 36, 0.12); }
+@keyframes doubleStageAura {
+  0%, 100% {
+    box-shadow:
+      0 30px 90px rgba(0, 0, 0, 0.5),
+      0 0 36px rgba(251, 191, 36, 0.18),
+      inset 0 0 32px rgba(251, 191, 36, 0.06);
+  }
+  50% {
+    box-shadow:
+      0 30px 90px rgba(0, 0, 0, 0.5),
+      0 0 68px rgba(251, 191, 36, 0.36),
+      inset 0 0 52px rgba(251, 191, 36, 0.14);
+  }
 }
 
-@keyframes doubleBannerPop {
-  from { opacity: 0; transform: scale(0.88); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes doubleShowcaseEntrance {
+  from { opacity: 0; transform: scale(0.86) translateY(-10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 @keyframes doubleBannerShine {
@@ -738,7 +1042,72 @@ button {
   75%, 100% { transform: translateX(100%); }
 }
 
-@keyframes sparkBounce {
-  from { transform: scale(1) rotate(-6deg); }
-  to { transform: scale(1.25) rotate(8deg); }
+@keyframes doubleRaysSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes medallionPulse {
+  from { transform: scale(1) rotate(-3deg); }
+  to { transform: scale(1.09) rotate(3deg); }
+}
+
+@keyframes doubleFloatSpark {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.95;
+  }
+  80% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translateY(-420px) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes urgentTimerBeat {
+  from { transform: scale(1); }
+  to { transform: scale(1.14); }
+}
+
+@media (max-width: 720px) {
+  .game-lobby-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .game-url-row {
+    justify-content: center;
+  }
+  .topbar-center {
+    display: none;
+  }
+  .double-points-showcase {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
+  .double-showcase-pill {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .double-stage-particles,
+  .double-showcase-rays,
+  .double-2x-ring {
+    display: none;
+  }
+  .stage:has(.is-double-points),
+  .double-points-showcase,
+  .double-2x-medallion,
+  .game-timer.is-urgent {
+    animation: none !important;
+  }
 }
